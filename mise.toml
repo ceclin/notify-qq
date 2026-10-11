@@ -1,0 +1,142 @@
+[tools]
+go = "1.27"
+golangci-lint = "2.14.0"
+jactionlint = "2.1.0"
+goreleaser = "2.18.3"
+"go:github.com/google/go-licenses/v2" = "2.0.1"
+"github:cli/cli" = "2.102.0"
+
+[tasks.lint]
+description = "Check formatting, structured logs, contexts, resources, dependency boundaries, and modern Go patterns"
+run = ["golangci-lint config verify", "golangci-lint run ./..."]
+
+[tasks."lint:workflows"]
+description = "Validate GitHub Actions workflow syntax, expressions, and action inputs"
+run = "jactionlint"
+
+[tasks."lint:release"]
+description = "Validate the distribution configuration"
+run = "goreleaser check"
+
+[tasks.format]
+description = "Format Go code and organize imports"
+run = "golangci-lint fmt ./..."
+
+[tasks.test]
+description = "Run behavior tests with the race detector"
+run = "go test -race ./..."
+
+[tasks.vet]
+description = "Check Go code with go vet"
+run = "go vet ./..."
+
+[tasks.vuln]
+description = "Check reachable Go code for known vulnerabilities"
+# Build the pinned analyzer with the selected Go toolchain so a cached binary
+# from an older Go release cannot misread newer language or standard-library code.
+run = "go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./..."
+
+[tasks.build]
+description = "Build the notification service"
+run = "go build -o bin/notify-qq ./cmd/notify-qq"
+
+[tasks.ci]
+description = "Run independent checks in parallel, then test, then build"
+run = [
+  { tasks = ["lint", "lint:workflows", "lint:release", "vet", "vuln"] },
+  { task = "test" },
+  { task = "build" },
+]
+
+[tasks."release:licenses"]
+description = "Collect licenses for the shipped Linux dependency graphs and Go runtime"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+rm -rf THIRD_PARTY_LICENSES
+mkdir -p THIRD_PARTY_LICENSES
+for arch in amd64 arm64; do
+  GOOS=linux GOARCH="$arch" CGO_ENABLED=0 go-licenses save ./cmd/notify-qq --save_path="THIRD_PARTY_LICENSES/linux_$arch"
+done
+cp "$(go env GOROOT)/LICENSE" THIRD_PARTY_LICENSES/GO-LICENSE
+'''
+
+[tasks."release:snapshot"]
+description = "Build local release archives without publishing or requiring a tag"
+run = [
+  { task = "release:licenses" },
+  "goreleaser release --snapshot --clean --skip=publish,docker",
+  { task = "release:verify" },
+]
+
+[tasks."release:validate"]
+description = "Require a clean, matching SemVer tag checkout in the GitHub release workflow"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+[[ "${GITHUB_REPOSITORY:-}" == ceclin/notify-qq ]]
+[[ "${GITHUB_REF_TYPE:-}" == tag ]]
+identifier='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+version="^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-$identifier(\\.$identifier)*)?$"
+if [[ ! "${GITHUB_REF_NAME:-}" =~ $version ]]; then
+  echo 'Release tag must be vMAJOR.MINOR.PATCH with optional SemVer prerelease identifiers.' >&2
+  exit 1
+fi
+[[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+[[ "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" == "$GITHUB_SHA" ]]
+[[ -z "$(git status --porcelain)" ]]
+'''
+
+[tasks."release:verify"]
+description = "Verify archive checksums, executable permissions, and complete license/config contents"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+(cd dist && sha256sum --check SHA256SUMS)
+temporary=$(mktemp -d)
+trap 'rm -rf "$temporary"' EXIT
+for archive in dist/*.tar.gz; do
+  destination="$temporary/$(basename "$archive" .tar.gz)"
+  mkdir "$destination"
+  tar -xzf "$archive" -C "$destination"
+  test -x "$destination/notify-qq"
+  cmp LICENSE "$destination/LICENSE"
+  cmp README.md "$destination/README.md"
+  cmp .env.example "$destination/.env.example"
+  diff -r THIRD_PARTY_LICENSES "$destination/THIRD_PARTY_LICENSES"
+done
+'''
+
+[tasks.release]
+description = "Validate, check, build, and stage a tagged GitHub release and publish its images"
+run = [
+  { task = "release:validate" },
+  { task = "ci" },
+  { task = "release:licenses" },
+  "goreleaser release --clean --fail-fast",
+  { task = "release:verify" },
+]
+
+[tasks."release:publish"]
+description = "Promote the attested image channel and publish its draft GitHub release"
+shell = "bash -c"
+run = [
+  { task = "release:validate" },
+  '''
+set -euo pipefail
+prerelease=false
+latest=true
+channel=latest
+if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+  prerelease=true
+  latest=false
+  channel=preview
+fi
+read -r digest image < dist/digests.txt
+[[ "$digest" =~ ^[a-f0-9]{64}$ ]]
+[[ "$image" == "ghcr.io/ceclin/notify-qq:$GITHUB_REF_NAME" ]]
+[[ "$(wc -l < dist/digests.txt)" -eq 1 ]]
+docker buildx imagetools create --tag "ghcr.io/ceclin/notify-qq:$channel" "ghcr.io/ceclin/notify-qq@sha256:$digest"
+gh release edit "$GITHUB_REF_NAME" --repo ceclin/notify-qq --verify-tag --draft=false --prerelease="$prerelease" --latest="$latest"
+''',
+]

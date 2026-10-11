@@ -1,0 +1,75 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - bidichk
+    - depguard
+    - durationcheck
+    - errcheck
+    - errorlint
+    - ineffassign
+    - modernize
+    - noctx
+    - rowserrcheck
+    - sloglint
+    - sqlclosecheck
+    - staticcheck
+    - unused
+  settings:
+    depguard:
+      rules:
+        lower-layers:
+          files:
+            - "**/internal/apikey/**"
+            - "**/internal/config/**"
+            - "**/internal/logging/**"
+            - "**/internal/qq/**"
+            - "**/internal/telemetry/**"
+          deny:
+            - pkg: "github.com/ceclin/notify-qq/internal/app$"
+              desc: Application assembly depends on lower layers.
+            - pkg: "github.com/ceclin/notify-qq/internal/app/"
+              desc: Application assembly depends on lower layers.
+            - pkg: "github.com/ceclin/notify-qq/cmd$"
+              desc: Commands own process entry points.
+            - pkg: "github.com/ceclin/notify-qq/cmd/"
+              desc: Commands own process entry points.
+        production:
+          files:
+            - "**/cmd/**"
+            - "**/internal/app/**"
+            - "**/internal/apikey/**"
+            - "**/internal/config/**"
+            - "**/internal/logging/**"
+            - "**/internal/qq/**"
+            - "**/internal/telemetry/**"
+            - "!$test"
+          deny:
+            - pkg: "github.com/ceclin/notify-qq/internal/testsupport$"
+              desc: Test fixtures belong in tests.
+            - pkg: "github.com/ceclin/notify-qq/internal/testsupport/"
+              desc: Test fixtures belong in tests.
+            - pkg: "testing$"
+              desc: Testing APIs belong in tests.
+            - pkg: "net/http/httptest$"
+              desc: HTTP fixtures belong in tests.
+    sloglint:
+      attr-only: true
+      no-global: all
+      context: all
+      static-msg: true
+      key-naming-case: snake
+      forbidden-keys:
+        - time
+        - level
+        - msg
+        - source
+
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/ceclin/notify-qq

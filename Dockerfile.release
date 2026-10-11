@@ -1,0 +1,14 @@
+FROM --platform=$BUILDPLATFORM golang:1.27 AS files
+RUN mkdir /data
+
+FROM scratch
+ARG TARGETPLATFORM
+COPY --from=files /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=files --chown=65532:65532 /data /data
+COPY $TARGETPLATFORM/notify-qq /notify-qq
+COPY LICENSE /licenses/LICENSE
+COPY THIRD_PARTY_LICENSES/ /licenses/THIRD_PARTY_LICENSES/
+USER 65532:65532
+ENV LISTEN_ADDR=0.0.0.0:8080 DATA_DIR=/data
+EXPOSE 8080
+ENTRYPOINT ["/notify-qq"]

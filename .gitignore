@@ -1,0 +1,7 @@
+.env
+/data/
+/bin/
+/notify-qq
+/coverage.out
+/THIRD_PARTY_LICENSES/
+/dist/

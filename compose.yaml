@@ -1,0 +1,19 @@
+services:
+  notify-qq:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      LISTEN_ADDR: 0.0.0.0:8080
+      DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - notify-data:/data
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+
+volumes:
+  notify-data:

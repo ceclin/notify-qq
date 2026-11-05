@@ -1,9 +1,9 @@
 openapi: 3.1.1
 info:
   title: QQ notification service
-  version: 1.0.0
+  version: 0.1.0
   description: |
-    Send Markdown notifications with optional link buttons to the private QQ chat bound to the authenticated
+    Send Markdown notifications with optional link buttons to the QQ user or group bound to the authenticated
     API key. Keys have independent recipients and pairing state. Every response
     includes X-Request-ID for correlation. Request bodies are limited to 64 KiB.
     Requests have a 20-second deadline; each QQ call has a 10-second timeout.
@@ -131,7 +131,7 @@ paths:
   /status:
     get:
       operationId: getPairingStatus
-      summary: Read pairing status and recipient OpenID for the authenticated API key
+      summary: Read pairing status and recipient for the authenticated API key
       responses:
         '200':
           description: This key's pairing status and the shared QQ WebSocket state
@@ -143,16 +143,16 @@ paths:
               schema:
                 type: object
                 additionalProperties: false
-                required: [paired, user_openid, websocket_connected]
+                required: [paired, recipient, websocket_connected]
                 properties:
                   websocket_connected:
                     type: boolean
                     description: True after WebSocket READY or RESUMED; false while disconnected
                   paired:
                     type: boolean
-                  user_openid:
-                    type: string
-                    description: Recipient bound only to this key; empty when unpaired; not a numeric QQ account number
+                  recipient:
+                    $ref: '#/components/schemas/Recipient'
+                    description: User or group bound only to this key; null when unpaired. OpenID is not a numeric QQ account or group number.
         '401':
           $ref: '#/components/responses/Unauthorized'
         default:
@@ -237,6 +237,17 @@ components:
       schema:
         $ref: '#/components/schemas/RequestID'
   schemas:
+    Recipient:
+      type: [object, 'null']
+      additionalProperties: false
+      required: [type, openid]
+      properties:
+        type:
+          type: string
+          enum: [user, group]
+        openid:
+          type: string
+          minLength: 1
     RequestID:
       type: string
       pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'

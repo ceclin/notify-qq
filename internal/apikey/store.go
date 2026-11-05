@@ -18,18 +18,20 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/samber/oops"
 	_ "modernc.org/sqlite"
+
+	"github.com/ceclin/notify-qq/internal/recipient"
 )
 
 const Filename = "notify.sqlite3"
 const PairingLifetime = 5 * time.Minute
 
 type Key struct {
-	ID               string  `json:"id"`
-	Name             string  `json:"name"`
-	CreatedAt        string  `json:"created_at"`
-	RevokedAt        *string `json:"revoked_at"`
-	UserOpenID       string  `json:"user_openid"`
-	PairingExpiresAt *string `json:"pairing_expires_at"`
+	ID               string            `json:"id"`
+	Name             string            `json:"name"`
+	CreatedAt        string            `json:"created_at"`
+	RevokedAt        *string           `json:"revoked_at"`
+	Recipient        *recipient.Target `json:"recipient"`
+	PairingExpiresAt *string           `json:"pairing_expires_at"`
 }
 
 type CreateResult struct {
@@ -140,13 +142,17 @@ type keyScanner interface{ Scan(...any) error }
 
 func scanKey(row keyScanner) (Key, error) {
 	var key Key
-	err := row.Scan(&key.ID, &key.Name, &key.CreatedAt, &key.RevokedAt, &key.UserOpenID, &key.PairingExpiresAt)
+	var target recipient.Target
+	err := row.Scan(&key.ID, &key.Name, &key.CreatedAt, &key.RevokedAt, &target.Type, &target.OpenID, &key.PairingExpiresAt)
+	if target.OpenID != "" {
+		key.Recipient = &target
+	}
 	return key, err
 }
 
 func (s *Store) Authenticate(ctx context.Context, secret string) (Key, bool, error) {
 	digest := sha256.Sum256([]byte(secret))
-	key, err := scanKey(s.db.QueryRowContext(ctx, "SELECT id, name, created_at, revoked_at, user_openid, pairing_expires_at FROM api_keys WHERE digest = ? AND revoked_at IS NULL", digest[:]))
+	key, err := scanKey(s.db.QueryRowContext(ctx, "SELECT id, name, created_at, revoked_at, recipient_type, recipient_openid, pairing_expires_at FROM api_keys WHERE digest = ? AND revoked_at IS NULL", digest[:]))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Key{}, false, nil
 	}
@@ -165,7 +171,7 @@ func (s *Store) IssuePairing(ctx context.Context, id string) (PairingResult, err
 	}
 	expires := time.Now().UTC().Add(PairingLifetime).Format(time.RFC3339)
 	digest := sha256.Sum256([]byte(code))
-	key, err := scanKey(s.db.QueryRowContext(ctx, `UPDATE api_keys SET pairing_digest = ?, pairing_expires_at = ? WHERE id = ? AND revoked_at IS NULL RETURNING id, name, created_at, revoked_at, user_openid, pairing_expires_at`, digest[:], expires, id))
+	key, err := scanKey(s.db.QueryRowContext(ctx, `UPDATE api_keys SET pairing_digest = ?, pairing_expires_at = ? WHERE id = ? AND revoked_at IS NULL RETURNING id, name, created_at, revoked_at, recipient_type, recipient_openid, pairing_expires_at`, digest[:], expires, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return PairingResult{}, oops.FromContext(ctx).In("api_keys").Code("key_unavailable").New("API key is missing or revoked")
 	}
@@ -177,12 +183,12 @@ func (s *Store) IssuePairing(ctx context.Context, id string) (PairingResult, err
 
 // A single conditional update consumes the code and changes the recipient
 // atomically, even when the CLI and gateway hold separate database connections.
-func (s *Store) Bind(ctx context.Context, code, userOpenID string) (Key, bool, error) {
-	if userOpenID == "" {
+func (s *Store) Bind(ctx context.Context, code string, target recipient.Target) (Key, bool, error) {
+	if target.OpenID == "" || (target.Type != recipient.User && target.Type != recipient.Group) {
 		return Key{}, false, nil
 	}
 	digest := sha256.Sum256([]byte(code))
-	key, err := scanKey(s.db.QueryRowContext(ctx, `UPDATE api_keys SET user_openid = ?, pairing_digest = NULL, pairing_expires_at = NULL WHERE pairing_digest = ? AND pairing_expires_at > ? AND revoked_at IS NULL RETURNING id, name, created_at, revoked_at, user_openid, pairing_expires_at`, userOpenID, digest[:], time.Now().UTC().Format(time.RFC3339)))
+	key, err := scanKey(s.db.QueryRowContext(ctx, `UPDATE api_keys SET recipient_type = ?, recipient_openid = ?, pairing_digest = NULL, pairing_expires_at = NULL WHERE pairing_digest = ? AND pairing_expires_at > ? AND revoked_at IS NULL RETURNING id, name, created_at, revoked_at, recipient_type, recipient_openid, pairing_expires_at`, target.Type, target.OpenID, digest[:], time.Now().UTC().Format(time.RFC3339)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Key{}, false, nil
 	}
@@ -194,7 +200,7 @@ func (s *Store) Bind(ctx context.Context, code, userOpenID string) (Key, bool, e
 
 func (s *Store) List(ctx context.Context) (keys []Key, err error) {
 	builder := oops.FromContext(ctx).In("api_keys").Code("key_list_failed")
-	rows, err := s.db.QueryContext(ctx, "SELECT id, name, created_at, revoked_at, user_openid, pairing_expires_at FROM api_keys ORDER BY created_at, id")
+	rows, err := s.db.QueryContext(ctx, "SELECT id, name, created_at, revoked_at, recipient_type, recipient_openid, pairing_expires_at FROM api_keys ORDER BY created_at, id")
 	if err != nil {
 		return nil, builder.Wrapf(err, "API keys could not be listed")
 	}

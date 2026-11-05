@@ -34,10 +34,10 @@ func TestBehaviorStoredAPIKeysAndRevocationAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := management.Bind(t.Context(), firstCode, "owner-openid"); err != nil {
+	if _, _, err := management.Bind(t.Context(), firstCode, userRecipient("owner-openid")); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := management.Bind(t.Context(), secondCode, "owner-openid"); err != nil {
+	if _, _, err := management.Bind(t.Context(), secondCode, userRecipient("owner-openid")); err != nil {
 		t.Fatal(err)
 	}
 	for _, secret := range []string{firstSecret, secondSecret, fixture.apiKey} {
@@ -120,7 +120,7 @@ func TestBehaviorStoredKeyCorrelation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := fixture.service.keys.Bind(t.Context(), code, "owner-openid"); err != nil {
+	if _, _, err := fixture.service.keys.Bind(t.Context(), code, userRecipient("owner-openid")); err != nil {
 		t.Fatal(err)
 	}
 	captured.Reset()

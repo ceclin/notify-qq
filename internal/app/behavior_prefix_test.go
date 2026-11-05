@@ -32,9 +32,7 @@ func TestBehaviorAPIPathPrefixScopesAllEndpoints(t *testing.T) {
 	}
 	status, result, _ = fixture.request(t, http.MethodGet, prefix+"/status", "", authorization)
 	requireStatus(t, status, http.StatusOK)
-	if result["paired"] != true || result["user_openid"] != "owner-openid" {
-		t.Fatal("WebSocket event did not pair the recipient")
-	}
+	requireStatusTarget(t, result, "user", "owner-openid")
 	status, result, _ = fixture.notify(t, `{"content":"under the prefix"}`)
 	requireStatus(t, status, http.StatusOK)
 	if result["message_id"] != "qq-message-id" {

@@ -1,12 +1,12 @@
 # notify-qq
 
-Send notifications from your scripts to a private chat with an official QQ bot. Messages support Markdown and optional link buttons. Each API key is paired with its own recipient.
+Send notifications from your scripts to QQ private chats or groups through an official QQ bot. Messages support Markdown and optional link buttons. Each API key is paired with one user or group.
 
 ## Set up your QQ bot
 
-Create a bot in the [QQ Bot developer console](https://q.qq.com/) and enable the **message-list private chat / 单聊** scenario. You need its AppID and AppSecret.
+Create a bot in the [QQ Bot developer console](https://q.qq.com/) and enable the scenarios you need: **message-list private chat / 单聊** or **group chat / 群聊**. You need its AppID and AppSecret.
 
-For sandbox testing, add your QQ account as a tester and add the bot to your message list. Enable **allow proactive messages / 允许主动发送** in the bot's QQ settings. Configure the server's outbound IP whitelist if your application requires it.
+For sandbox testing, configure your test QQ account or group in the developer console. Add the bot to your message list or target group and enable **allow proactive messages / 允许主动发送** where required. Configure the server's outbound IP whitelist if your application requires it.
 
 The server needs outbound HTTPS and WebSocket access to QQ. No public QQ callback URL is needed.
 
@@ -65,15 +65,18 @@ Create a key for the script that will send notifications:
 docker compose exec notify-qq /notify-qq keys create --name backup
 ```
 
-Save the returned `key` for your script. In a QQ private chat with the bot, paste and send the entire `pairing_code` within 5 minutes, without a command prefix:
+Save the returned `key` for your script. Send the entire `pairing_code` within 5 minutes, without a command prefix:
+
+- For a private chat, paste it directly into your chat with the bot.
+- For a group, add the bot first, then **@ the bot** and paste the code in the same message.
 
 ```text
 nqp_...
 ```
 
-The bot confirms a successful binding. The API key and pairing code are shown only once; each pairing code can be used once. Give each script its own key, and share its pairing code only with the intended recipient.
+The bot confirms a successful binding in that chat or group. The API key and pairing code are shown only once; each pairing code can be used once. Give each script its own key, and share its pairing code only with the intended user or group.
 
-The bot explains when a pairing code is invalid or expired. Other messages receive a short acknowledgement, such as “Got it.”
+The bot explains when a pairing code is invalid or expired. Other private messages and group messages that @ the bot receive a short acknowledgement, such as “Got it.”
 
 ## Send a notification
 
@@ -112,7 +115,7 @@ curl --fail-with-body "$NOTIFY_URL/status" \
   -H "Authorization: Bearer $NOTIFY_API_KEY"
 ```
 
-Expect `paired: true` and `websocket_connected: true`. If the binding confirmation did not arrive, use this endpoint to check whether pairing succeeded.
+Expect `paired: true` and `websocket_connected: true`. The `recipient` object contains `type` (`user` or `group`) and `openid`; it is `null` before pairing. If the binding confirmation did not arrive, use this endpoint to check whether pairing succeeded.
 
 | Endpoint | Authentication | Purpose |
 |---|---|---|

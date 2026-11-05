@@ -25,6 +25,16 @@ func (fixture *behaviorFixture) deliverMessage(t *testing.T, user, content strin
 
 func (fixture *behaviorFixture) deliverMessageWithID(t *testing.T, user, content, messageID string) error {
 	t.Helper()
+	return fixture.deliverQQEvent(t, "C2C_MESSAGE_CREATE", map[string]any{"id": messageID, "content": content, "author": map[string]string{"user_openid": user}})
+}
+
+func (fixture *behaviorFixture) deliverGroupMessage(t *testing.T, group, member, content string) error {
+	t.Helper()
+	return fixture.deliverQQEvent(t, "GROUP_AT_MESSAGE_CREATE", map[string]any{"id": "binding-message", "content": content, "group_openid": group, "author": map[string]string{"member_openid": member}})
+}
+
+func (fixture *behaviorFixture) deliverQQEvent(t *testing.T, eventType string, data map[string]any) error {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	ctx = logging.WithLogger(ctx, fixture.logger)
@@ -50,13 +60,13 @@ func (fixture *behaviorFixture) deliverMessageWithID(t *testing.T, user, content
 			return
 		}
 		if identify.Opcode != 2 || identify.Data.Token != "QQBot test-token" || identify.Data.Intents != 1<<25 || identify.Data.Shard != [2]int{0, 1} {
-			t.Error("gateway did not identify with the C2C intent and configured token")
+			t.Error("gateway did not identify with the group/C2C intent and configured token")
 			return
 		}
 		if err := wsjson.Write(ctx, connection, map[string]any{"op": 0, "s": 1, "t": "READY", "d": map[string]string{"session_id": "test-session"}}); err != nil {
 			return
 		}
-		if err := wsjson.Write(ctx, connection, map[string]any{"op": 0, "s": 2, "t": "C2C_MESSAGE_CREATE", "id": "binding-event", "d": map[string]any{"id": messageID, "content": content, "author": map[string]string{"user_openid": user}}}); err != nil {
+		if err := wsjson.Write(ctx, connection, map[string]any{"op": 0, "s": 2, "t": eventType, "id": "binding-event", "d": data}); err != nil {
 			return
 		}
 		for {

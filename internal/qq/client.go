@@ -17,6 +17,7 @@ import (
 	"github.com/samber/oops"
 
 	"github.com/ceclin/notify-qq/internal/logging"
+	"github.com/ceclin/notify-qq/internal/recipient"
 	"github.com/ceclin/notify-qq/internal/telemetry"
 )
 
@@ -155,21 +156,30 @@ type Message struct {
 	Timestamp string `json:"timestamp,omitempty"`
 }
 
-func (q *Client) Send(ctx context.Context, userOpenID string, notification Notification) (Message, error) {
-	return q.send(ctx, userOpenID, messagePayload(notification))
+func (q *Client) Send(ctx context.Context, target recipient.Target, notification Notification) (Message, error) {
+	return q.send(ctx, target, messagePayload(notification))
 }
 
-func (q *Client) Reply(ctx context.Context, userOpenID, messageID, content string) (Message, error) {
+func (q *Client) Reply(ctx context.Context, target recipient.Target, messageID, content string) (Message, error) {
 	payload := sendMessageRequest{MsgType: messageTypeText, Content: content, MsgID: messageID, MsgSeq: 1}
-	return q.send(ctx, userOpenID, payload)
+	return q.send(ctx, target, payload)
 }
 
-func (q *Client) send(ctx context.Context, userOpenID string, payload sendMessageRequest) (Message, error) {
+func (q *Client) send(ctx context.Context, target recipient.Target, payload sendMessageRequest) (Message, error) {
+	var collection string
+	switch target.Type {
+	case recipient.User:
+		collection = "users"
+	case recipient.Group:
+		collection = "groups"
+	default:
+		return Message{}, logging.OperationError(ctx, "qq", "recipient_type_invalid", "QQ recipient type is invalid", nil)
+	}
 	token, err := q.accessToken(ctx)
 	if err != nil {
 		return Message{}, err
 	}
-	data, err := q.request(ctx, http.MethodPost, "send_message", apiBaseURL+"/v2/users/"+url.PathEscape(userOpenID)+"/messages", token, payload)
+	data, err := q.request(ctx, http.MethodPost, "send_message", apiBaseURL+"/v2/"+collection+"/"+url.PathEscape(target.OpenID)+"/messages", token, payload)
 	if err != nil {
 		var upstream *Error
 		if errors.As(err, &upstream) && upstream.Status == http.StatusUnauthorized {

@@ -20,7 +20,7 @@ import (
 	"github.com/ceclin/notify-qq/internal/logging"
 )
 
-const c2cMessageIntent = 1 << 25
+const groupAndC2CMessageIntent = 1 << 25
 const gatewayOperationTimeout = 10 * time.Second
 
 type Event struct {
@@ -220,7 +220,7 @@ func (q *Client) connectGateway(ctx context.Context, session *gatewaySession, ha
 			Token   string `json:"token"`
 			Intents int    `json:"intents"`
 			Shard   [2]int `json:"shard"`
-		}{"QQBot " + token, c2cMessageIntent, [2]int{0, 1}})
+		}{"QQBot " + token, groupAndC2CMessageIntent, [2]int{0, 1}})
 	} else {
 		err = writeGatewayFrame(connectionCtx, connection, 6, struct {
 			Token     string `json:"token"`

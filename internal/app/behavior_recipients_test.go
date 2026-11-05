@@ -18,6 +18,7 @@ import (
 	"github.com/ceclin/notify-qq/internal/logging"
 
 	"github.com/ceclin/notify-qq/internal/apikey"
+	"github.com/ceclin/notify-qq/internal/recipient"
 )
 
 func TestBehaviorKeyRecipientsStayIsolatedAcrossRebindingAndRestart(t *testing.T) {
@@ -45,9 +46,7 @@ func TestBehaviorKeyRecipientsStayIsolatedAcrossRebindingAndRestart(t *testing.T
 	}
 	requireRecipient := func(secret, user string) {
 		result := request(secret, "/status", "", http.StatusOK)
-		if result["user_openid"] != user || result["paired"] != (user != "") {
-			t.Fatalf("key-scoped status mismatch: %v", result)
-		}
+		requireStatusTarget(t, result, "user", user)
 	}
 	requireRecipient(firstSecret, "")
 	requireRecipient(secondSecret, "")
@@ -127,7 +126,7 @@ func TestBehaviorKeyRecipientsStayIsolatedAcrossRebindingAndRestart(t *testing.T
 	for _, entry := range entries {
 		byID[entry.ID] = entry
 	}
-	if byID[first.ID].UserOpenID != "charlie" || byID[second.ID].UserOpenID != "bob" || byID[first.ID].PairingExpiresAt != nil {
+	if byID[first.ID].Recipient == nil || *byID[first.ID].Recipient != userRecipient("charlie") || byID[second.ID].Recipient == nil || *byID[second.ID].Recipient != userRecipient("bob") || byID[first.ID].PairingExpiresAt != nil {
 		t.Fatal("SQLite did not retain isolated bindings or clear consumed code")
 	}
 	for _, secret := range []string{firstSecret, secondSecret, firstCode, secondCode, superseded, replacement, "alice report", "bob report"} {
@@ -209,7 +208,7 @@ func TestBehaviorExpiredAndRevokedPairingCodesCannotBind(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range listed {
-		if (entry.ID == key.ID || entry.ID == revoked.ID) && (entry.UserOpenID != "" || entry.PairingExpiresAt != nil) {
+		if (entry.ID == key.ID || entry.ID == revoked.ID) && (entry.Recipient != nil || entry.PairingExpiresAt != nil) {
 			t.Fatal("revoked code remained bindable")
 		}
 	}
@@ -257,13 +256,13 @@ func TestBehaviorConcurrentPairingConsumesCodeOnce(t *testing.T) {
 			<-start
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 			defer cancel()
-			user := []string{"alice", "bob"}[index]
-			key, changed, err := store.Bind(ctx, fixture.pairingCode, user)
+			target := []recipient.Target{{Type: recipient.User, OpenID: "same-openid"}, {Type: recipient.Group, OpenID: "same-openid"}}[index]
+			key, changed, err := store.Bind(ctx, fixture.pairingCode, target)
 			outcomes <- result{key, changed, err}
 		}(index, store)
 	}
 	close(start)
-	var winner string
+	var winner recipient.Target
 	successes := 0
 	for range 2 {
 		outcome := <-outcomes
@@ -272,7 +271,7 @@ func TestBehaviorConcurrentPairingConsumesCodeOnce(t *testing.T) {
 		}
 		if outcome.changed {
 			successes++
-			winner = outcome.key.UserOpenID
+			winner = *outcome.key.Recipient
 		}
 	}
 	if successes != 1 {
@@ -280,12 +279,10 @@ func TestBehaviorConcurrentPairingConsumesCodeOnce(t *testing.T) {
 	}
 	status, state, _ := fixture.request(t, http.MethodGet, "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})
 	requireStatus(t, status, http.StatusOK)
-	if state["user_openid"] != winner {
-		t.Fatal("status did not select the winning binding")
-	}
+	requireStatusTarget(t, state, string(winner.Type), winner.OpenID)
 	status, _, _ = fixture.notify(t, `{"content":"one recipient"}`)
 	requireStatus(t, status, http.StatusOK)
-	if fixture.messages[0]["recipient"] != winner {
+	if fixture.messages[0]["recipient"] != winner.OpenID || fixture.messages[0]["recipient_type"] != string(winner.Type) {
 		t.Fatal("notification did not select the winning recipient")
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/ceclin/notify-qq/internal/config"
 	"github.com/ceclin/notify-qq/internal/logging"
 	"github.com/ceclin/notify-qq/internal/qq"
+	"github.com/ceclin/notify-qq/internal/recipient"
 	"github.com/ceclin/notify-qq/internal/telemetry"
 	"github.com/ceclin/notify-qq/internal/testsupport"
 )
@@ -91,14 +92,19 @@ func startBehaviorServiceWithTelemetry(t *testing.T, recipient string, upstreamB
 			return
 		}
 		fixture.sendCalls.Add(1)
-		if !strings.HasPrefix(r.URL.Path, "/v2/users/") || !strings.HasSuffix(r.URL.Path, "/messages") || r.Header.Get("Authorization") != "QQBot test-token" {
+		collection, kind := "users", "user"
+		if strings.HasPrefix(r.URL.Path, "/v2/groups/") {
+			collection, kind = "groups", "group"
+		}
+		if !strings.HasPrefix(r.URL.Path, "/v2/"+collection+"/") || !strings.HasSuffix(r.URL.Path, "/messages") || r.Header.Get("Authorization") != "QQBot test-token" {
 			t.Error("QQ message used incorrect recipient or authorization")
 		}
 		var message map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&message); err != nil {
 			t.Error(err)
 		}
-		message["recipient"] = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v2/users/"), "/messages")
+		message["recipient"] = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v2/"+collection+"/"), "/messages")
+		message["recipient_type"] = kind
 		fixture.messageMutex.Lock()
 		fixture.messages = append(fixture.messages, message)
 		fixture.messageMutex.Unlock()
@@ -120,7 +126,7 @@ func startBehaviorServiceWithTelemetry(t *testing.T, recipient string, upstreamB
 	created, err := keys.Create(t.Context(), "behavior-fixture")
 	fixture.apiKey, fixture.pairingCode = created.APIKey, created.PairingCode
 	if err == nil && recipient != "" {
-		_, _, err = keys.Bind(t.Context(), fixture.pairingCode, recipient)
+		_, _, err = keys.Bind(t.Context(), fixture.pairingCode, userRecipient(recipient))
 	}
 	if err := errors.Join(err, keys.Close()); err != nil {
 		t.Fatal(err)
@@ -200,6 +206,24 @@ func requireStatus(t *testing.T, actual, expected int) {
 	}
 }
 
+func userRecipient(openID string) recipient.Target {
+	return recipient.Target{Type: recipient.User, OpenID: openID}
+}
+
+func requireStatusTarget(t *testing.T, result map[string]any, kind, openID string) {
+	t.Helper()
+	if openID == "" {
+		if result["paired"] != false || result["recipient"] != nil {
+			t.Fatalf("unexpected unpaired status: %v", result)
+		}
+		return
+	}
+	target, ok := result["recipient"].(map[string]any)
+	if !ok || result["paired"] != true || target["type"] != kind || target["openid"] != openID {
+		t.Fatalf("unexpected recipient status: %v", result)
+	}
+}
+
 func TestBehaviorPairAndNotifyAcrossRestart(t *testing.T) {
 	fixture := startBehaviorService(t, "", nil)
 	status, _, _ := fixture.notify(t, `{"content":"before pairing"}`)
@@ -218,9 +242,7 @@ func TestBehaviorPairAndNotifyAcrossRestart(t *testing.T) {
 	}
 	status, result, _ := fixture.request(t, "GET", "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})
 	requireStatus(t, status, 200)
-	if result["paired"] != true || result["user_openid"] != "owner-openid" {
-		t.Fatalf("unexpected pairing status: %v", result)
-	}
+	requireStatusTarget(t, result, "user", "owner-openid")
 	if len(fixture.messages) != 4 {
 		t.Fatalf("pairing replies = %d, want four", len(fixture.messages))
 	}
@@ -265,7 +287,7 @@ func TestBehaviorWebhookIsNotExposed(t *testing.T) {
 	if err != nil || !valid {
 		t.Fatal("fixture key could not be read")
 	}
-	if key.UserOpenID != "" || fixture.tokenCalls.Load() != 0 {
+	if key.Recipient != nil || fixture.tokenCalls.Load() != 0 {
 		t.Fatal("removed webhook altered pairing or contacted QQ")
 	}
 }
@@ -281,7 +303,7 @@ func TestBehaviorRejectInvalidNotificationsWithoutContactingQQ(t *testing.T) {
 		{"wrong media type", `{"content":"hello"}`, fixture.apiKey, "text/plain", 415},
 		{"malformed JSON", `{`, fixture.apiKey, "application/json", 400},
 		{"empty message", `{"content":" "}`, fixture.apiKey, "application/json", 400},
-		{"recipient override", `{"content":"hello","user_openid":"other"}`, fixture.apiKey, "application/json", 400},
+		{"recipient override", `{"content":"hello","recipient":{"type":"user","openid":"other"}}`, fixture.apiKey, "application/json", 400},
 		{"multiple objects", `{"content":"hello"}{}`, fixture.apiKey, "application/json", 400},
 		{"large message", `{"content":"` + strings.Repeat("x", 4001) + `"}`, fixture.apiKey, "application/json", 400},
 		{"large body", `{"content":"` + strings.Repeat("x", maxRequestBytes) + `"}`, fixture.apiKey, "application/json", 413},

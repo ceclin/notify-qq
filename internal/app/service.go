@@ -22,6 +22,7 @@ import (
 	"github.com/ceclin/notify-qq/internal/apikey"
 	"github.com/ceclin/notify-qq/internal/logging"
 	"github.com/ceclin/notify-qq/internal/qq"
+	"github.com/ceclin/notify-qq/internal/recipient"
 	"github.com/ceclin/notify-qq/internal/telemetry"
 )
 
@@ -161,8 +162,8 @@ func authenticatedKey(c *echo.Context) apikey.Key {
 	return c.Request().Context().Value(authenticatedKeyContextKey{}).(apikey.Key)
 }
 
-func recipientReference(openID string) string {
-	digest := sha256.Sum256([]byte(openID))
+func recipientReference(target recipient.Target) string {
+	digest := sha256.Sum256([]byte(string(target.Type) + ":" + target.OpenID))
 	return hex.EncodeToString(digest[:8])
 }
 
@@ -196,8 +197,8 @@ func (s *service) authenticate(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 func (s *service) status(c *echo.Context) error {
-	openID := authenticatedKey(c).UserOpenID
-	return c.JSON(http.StatusOK, map[string]any{"paired": openID != "", "user_openid": openID, "websocket_connected": s.qq.GatewayConnected()})
+	target := authenticatedKey(c).Recipient
+	return c.JSON(http.StatusOK, map[string]any{"paired": target != nil, "recipient": target, "websocket_connected": s.qq.GatewayConnected()})
 }
 
 func (s *service) notify(c *echo.Context) error {
@@ -223,19 +224,20 @@ func (s *service) notify(c *echo.Context) error {
 	if err != nil {
 		return httpFailure(ctx, 400, "invalid_notification", oops.GetPublic(err, "Notification input is invalid"), err)
 	}
-	openID := authenticatedKey(c).UserOpenID
-	if openID == "" {
+	target := authenticatedKey(c).Recipient
+	if target == nil {
 		return httpFailure(ctx, 409, "recipient_not_paired", "Bind this API key by sending its pairing code to the bot", nil)
 	}
 	logger := logging.FromContext(ctx)
 	logger.LogAttrs(ctx, slog.LevelInfo, "Notification send started",
 		slog.String("event", "notification_started"),
-		slog.String("recipient_ref", recipientReference(openID)),
+		slog.String("recipient_type", string(target.Type)),
+		slog.String("recipient_ref", recipientReference(*target)),
 		slog.Int("content_bytes", len(message.Markdown)),
 		slog.String("format", "markdown"),
 		slog.Int("button_count", len(message.Buttons)),
 	)
-	result, err := s.qq.Send(ctx, openID, message)
+	result, err := s.qq.Send(ctx, *target, message)
 	if err != nil {
 		status := http.StatusBadGateway
 		public := "QQ could not accept the notification; check the QQ error code and bot permissions"
@@ -256,7 +258,8 @@ func (s *service) notify(c *echo.Context) error {
 	}
 	logger.LogAttrs(ctx, slog.LevelInfo, "Notification accepted by QQ",
 		slog.String("event", "notification_accepted"),
-		slog.String("recipient_ref", recipientReference(openID)),
+		slog.String("recipient_type", string(target.Type)),
+		slog.String("recipient_ref", recipientReference(*target)),
 		slog.String("message_id", result.ID),
 	)
 	return c.JSON(http.StatusOK, map[string]any{"status": "accepted", "message_id": result.ID, "timestamp": result.Timestamp})
@@ -270,37 +273,45 @@ func invalidBody(ctx context.Context, err error) error {
 }
 
 func (s *service) handleQQEvent(ctx context.Context, event qq.Event) error {
-	if event.Type != "C2C_MESSAGE_CREATE" {
+	if event.Type != "C2C_MESSAGE_CREATE" && event.Type != "GROUP_AT_MESSAGE_CREATE" {
 		logging.FromContext(ctx).LogAttrs(ctx, slog.LevelDebug, "QQ event requires no action", slog.String("event", "qq_event_ignored"))
 		return nil
 	}
-	return s.replyFromMessage(ctx, event.Data)
+	return s.replyFromMessage(ctx, event.Type, event.Data)
 }
 
-func (s *service) replyFromMessage(ctx context.Context, data json.RawMessage) error {
+func (s *service) replyFromMessage(ctx context.Context, eventType string, data json.RawMessage) error {
 	var message struct {
-		ID      string `json:"id"`
-		Content string `json:"content"`
-		Author  struct {
-			UserOpenID string `json:"user_openid"`
+		ID          string `json:"id"`
+		Content     string `json:"content"`
+		GroupOpenID string `json:"group_openid"`
+		Author      struct {
+			UserOpenID   string `json:"user_openid"`
+			MemberOpenID string `json:"member_openid"`
 		} `json:"author"`
 	}
 	if err := json.Unmarshal(data, &message); err != nil {
 		return logging.OperationError(ctx, "qq_reply", "invalid_message", "QQ message event is invalid", err)
 	}
-	if message.ID == "" || message.Author.UserOpenID == "" {
+	target := recipient.Target{Type: recipient.User, OpenID: message.Author.UserOpenID}
+	sender := message.Author.UserOpenID
+	if eventType == "GROUP_AT_MESSAGE_CREATE" {
+		target = recipient.Target{Type: recipient.Group, OpenID: message.GroupOpenID}
+		sender = message.Author.MemberOpenID
+	}
+	if message.ID == "" || sender == "" || target.OpenID == "" {
 		return logging.OperationError(ctx, "qq_reply", "invalid_message", "QQ message has no message ID or sender", nil)
 	}
 	content := randomAcknowledgement()
 	code := strings.TrimSpace(message.Content)
 	if strings.HasPrefix(code, "nqp_") {
 		var err error
-		content, err = s.bindingReply(ctx, message.Author.UserOpenID, code)
+		content, err = s.bindingReply(ctx, target, code)
 		if err != nil {
 			return err
 		}
 	}
-	_, err := s.qq.Reply(ctx, message.Author.UserOpenID, message.ID, content)
+	_, err := s.qq.Reply(ctx, target, message.ID, content)
 	if err != nil {
 		// Binding may already be committed; a failed reply must not replay the event.
 		replyError := logging.OperationError(ctx, "qq_reply", "qq_reply_failed", "QQ message reply could not be sent", err)
@@ -311,15 +322,15 @@ func (s *service) replyFromMessage(ctx context.Context, data json.RawMessage) er
 	return nil
 }
 
-func (s *service) bindingReply(ctx context.Context, userOpenID, code string) (string, error) {
-	key, changed, err := s.keys.Bind(ctx, code, userOpenID)
+func (s *service) bindingReply(ctx context.Context, target recipient.Target, code string) (string, error) {
+	key, changed, err := s.keys.Bind(ctx, code, target)
 	if err != nil {
 		return "", logging.OperationError(ctx, "pairing", "pairing_failed", "Recipient binding could not be saved", err)
 	}
 	if !changed {
 		return "Pairing code is invalid or expired. Please generate a new one.", nil
 	}
-	logging.FromContext(ctx).LogAttrs(ctx, slog.LevelInfo, "Notification recipient paired", slog.String("event", "recipient_paired"), slog.String("api_key_id", key.ID), slog.String("recipient_ref", recipientReference(key.UserOpenID)))
+	logging.FromContext(ctx).LogAttrs(ctx, slog.LevelInfo, "Notification recipient paired", slog.String("event", "recipient_paired"), slog.String("api_key_id", key.ID), slog.String("recipient_type", string(target.Type)), slog.String("recipient_ref", recipientReference(target)))
 	return "Paired successfully. Notifications are ready.", nil
 }
 

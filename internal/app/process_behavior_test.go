@@ -23,6 +23,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 
 	"github.com/ceclin/notify-qq/internal/apikey"
+	"github.com/ceclin/notify-qq/internal/recipient"
 )
 
 // Build and launch the real entry point so exit codes, configuration failures,
@@ -345,7 +346,7 @@ func launchServiceProcess(t *testing.T, binary string, overrides map[string]stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, bindError := keys.Bind(t.Context(), credential.PairingCode, "owner-openid")
+	_, _, bindError := keys.Bind(t.Context(), credential.PairingCode, recipient.Target{Type: recipient.User, OpenID: "owner-openid"})
 	if err := errors.Join(bindError, keys.Close()); err != nil {
 		t.Fatal(err)
 	}

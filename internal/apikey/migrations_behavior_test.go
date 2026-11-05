@@ -11,17 +11,30 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+
+	"github.com/ceclin/notify-qq/internal/recipient"
 )
 
 func migrationSource(t *testing.T, extra string) fs.FS {
 	t.Helper()
-	initial, err := migrationFiles.ReadFile("migrations/00001_create_api_keys.sql")
+	baseline, err := fs.Sub(migrationFiles, "migrations")
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := fstest.MapFS{"00001_create_api_keys.sql": &fstest.MapFile{Data: initial}}
+	source := fstest.MapFS{}
+	entries, err := fs.ReadDir(baseline, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		contents, err := fs.ReadFile(baseline, entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		source[entry.Name()] = &fstest.MapFile{Data: contents}
+	}
 	if extra != "" {
-		source["00002_upgrade.sql"] = &fstest.MapFile{Data: []byte(extra)}
+		source["00003_upgrade.sql"] = &fstest.MapFile{Data: []byte(extra)}
 	}
 	return source
 }
@@ -36,7 +49,7 @@ func TestBehaviorMigrationUpgradesPreserveBindingsAndCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := initial.Bind(t.Context(), created.PairingCode, "alice"); err != nil {
+	if _, _, err := initial.Bind(t.Context(), created.PairingCode, recipient.Target{Type: recipient.User, OpenID: "alice"}); err != nil {
 		t.Fatal(err)
 	}
 	revoked, err := initial.Create(t.Context(), "revoked")
@@ -50,7 +63,7 @@ func TestBehaviorMigrationUpgradesPreserveBindingsAndCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if initial.Migrations() != (MigrationState{Version: 1, Applied: 1}) {
+	if initial.Migrations() != (MigrationState{Version: 2, Applied: 2}) {
 		t.Fatal("fresh database did not apply baseline once")
 	}
 	if err := initial.Close(); err != nil {
@@ -61,17 +74,17 @@ func TestBehaviorMigrationUpgradesPreserveBindingsAndCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if upgraded.Migrations() != (MigrationState{Version: 2, Applied: 1}) {
+	if upgraded.Migrations() != (MigrationState{Version: 3, Applied: 1}) {
 		t.Fatal("existing database did not apply only the pending upgrade")
 	}
 	owner, valid, err := upgraded.Authenticate(t.Context(), created.APIKey)
-	if err != nil || !valid || owner.ID != created.ID || owner.UserOpenID != "alice" {
+	if err != nil || !valid || owner.ID != created.ID || owner.Recipient == nil || *owner.Recipient != (recipient.Target{Type: recipient.User, OpenID: "alice"}) {
 		t.Fatal("upgrade lost credential or binding")
 	}
 	if _, valid, err := upgraded.Authenticate(t.Context(), revoked.APIKey); err != nil || valid {
 		t.Fatal("upgrade revived a revoked key")
 	}
-	if _, changed, err := upgraded.Bind(t.Context(), pending.PairingCode, "bob"); err != nil || !changed {
+	if _, changed, err := upgraded.Bind(t.Context(), pending.PairingCode, recipient.Target{Type: recipient.User, OpenID: "bob"}); err != nil || !changed {
 		t.Fatal("upgrade lost pending pairing code")
 	}
 	if err := upgraded.Close(); err != nil {
@@ -81,7 +94,7 @@ func TestBehaviorMigrationUpgradesPreserveBindingsAndCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reopened.Migrations() != (MigrationState{Version: 2, Applied: 0}) {
+	if reopened.Migrations() != (MigrationState{Version: 3, Applied: 0}) {
 		t.Fatal("reopen replayed applied migrations")
 	}
 	if err := reopened.Close(); err != nil {
@@ -103,13 +116,13 @@ func TestBehaviorMigrationFailureRollsBackSchemaDataAndVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := initial.Bind(t.Context(), created.PairingCode, "alice"); err != nil {
+	if _, _, err := initial.Bind(t.Context(), created.PairingCode, recipient.Target{Type: recipient.User, OpenID: "alice"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := initial.Close(); err != nil {
 		t.Fatal(err)
 	}
-	failing := migrationSource(t, "-- +goose Up\nALTER TABLE api_keys ADD COLUMN temporary_probe TEXT;\nUPDATE api_keys SET user_openid='incorrect';\nSELECT missing_column FROM api_keys;\n-- +goose Down\nSELECT 1;")
+	failing := migrationSource(t, "-- +goose Up\nALTER TABLE api_keys ADD COLUMN temporary_probe TEXT;\nUPDATE api_keys SET recipient_openid='incorrect';\nSELECT missing_column FROM api_keys;\n-- +goose Down\nSELECT 1;")
 	if opened, err := openStore(t.Context(), directory, failing); err == nil {
 		_ = opened.Close()
 		t.Fatal("invalid migration reported success")
@@ -130,7 +143,7 @@ func TestBehaviorMigrationFailureRollsBackSchemaDataAndVersion(t *testing.T) {
 	if err := database.QueryRowContext(t.Context(), "SELECT MAX(version_id) FROM goose_db_version").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if columns != 0 || version != 1 {
+	if columns != 0 || version != 2 {
 		t.Fatal("failed migration committed schema or version")
 	}
 	repaired := migrationSource(t, "-- +goose Up\nALTER TABLE api_keys ADD COLUMN temporary_probe TEXT;\n-- +goose Down\nALTER TABLE api_keys DROP COLUMN temporary_probe;")
@@ -144,7 +157,7 @@ func TestBehaviorMigrationFailureRollsBackSchemaDataAndVersion(t *testing.T) {
 		}
 	}()
 	owner, valid, err := reopened.Authenticate(t.Context(), created.APIKey)
-	if err != nil || !valid || owner.UserOpenID != "alice" || reopened.Migrations().Version != 2 {
+	if err != nil || !valid || owner.Recipient == nil || owner.Recipient.OpenID != "alice" || reopened.Migrations().Version != 3 {
 		t.Fatal("rollback lost data or prevented a corrected retry")
 	}
 }
@@ -198,7 +211,7 @@ func TestBehaviorMigrationLockCancellationAndConcurrentOpening(t *testing.T) {
 		}
 		applied += result.state.Applied
 	}
-	if applied != 1 {
+	if applied != 2 {
 		t.Fatalf("baseline applications=%d, want one", applied)
 	}
 }

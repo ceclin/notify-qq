@@ -30,9 +30,7 @@ func TestBehaviorPairingReplyFailureKeepsBinding(t *testing.T) {
 	}
 	status, result, _ := fixture.request(t, http.MethodGet, "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})
 	requireStatus(t, status, http.StatusOK)
-	if result["paired"] != true || result["user_openid"] != "owner-openid" {
-		t.Fatal("confirmation failure lost the recipient")
-	}
+	requireStatusTarget(t, result, "user", "owner-openid")
 	if err := fixture.deliverMessage(t, "intruder", fixture.pairingCode); err != nil {
 		t.Fatal(err)
 	}

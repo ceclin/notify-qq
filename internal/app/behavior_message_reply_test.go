@@ -25,7 +25,8 @@ func TestBehaviorPrivateMessagesAcknowledgeSenderWithoutChangingRecipient(t *tes
 			}
 			status, result, _ := fixture.request(t, http.MethodGet, "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})
 			requireStatus(t, status, http.StatusOK)
-			if result["user_openid"] != recipient || int(fixture.sendCalls.Load()) != len(contents) {
+			requireStatusTarget(t, result, "user", recipient)
+			if int(fixture.sendCalls.Load()) != len(contents) {
 				t.Fatal("ordinary messages changed pairing or sent more than one reply each")
 			}
 		})
@@ -62,7 +63,8 @@ func TestBehaviorPastedPairingCodeTrimsSurroundingWhitespace(t *testing.T) {
 	}
 	status, result, _ := fixture.request(t, http.MethodGet, "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})
 	requireStatus(t, status, http.StatusOK)
-	if result["paired"] != true || result["user_openid"] != "owner-openid" || fixture.sendCalls.Load() != 1 {
+	requireStatusTarget(t, result, "user", "owner-openid")
+	if fixture.sendCalls.Load() != 1 {
 		t.Fatal("pasted pairing code did not bind its sender")
 	}
 	if fixture.messages[0]["content"] != "Paired successfully. Notifications are ready." || fixture.messages[0]["msg_id"] != "binding-message" {

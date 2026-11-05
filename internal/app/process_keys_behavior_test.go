@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ceclin/notify-qq/internal/recipient"
 )
 
 func testProcessAPIKeys(t *testing.T, binary string) {
@@ -56,13 +58,13 @@ func testProcessAPIKeys(t *testing.T, binary string) {
 		}
 		if expected == http.StatusOK {
 			var state struct {
-				Paired     bool   `json:"paired"`
-				UserOpenID string `json:"user_openid"`
+				Paired    bool              `json:"paired"`
+				Recipient *recipient.Target `json:"recipient"`
 			}
 			if err := json.NewDecoder(response.Body).Decode(&state); err != nil {
 				t.Fatal(err)
 			}
-			if state.Paired || state.UserOpenID != "" {
+			if state.Paired || state.Recipient != nil {
 				t.Fatal("new key inherited a global or another key's recipient")
 			}
 		}
@@ -73,14 +75,14 @@ func testProcessAPIKeys(t *testing.T, binary string) {
 	requestStatus(second.Key, http.StatusOK)
 	pairedOutput := runKeyCommand(t, binary, process.command.Dir, []string{"keys", "pair", first.ID}, 0)
 	var paired struct {
-		PairingCode      string `json:"pairing_code"`
-		UserOpenID       string `json:"user_openid"`
-		PairingExpiresAt string `json:"pairing_expires_at"`
+		PairingCode      string            `json:"pairing_code"`
+		Recipient        *recipient.Target `json:"recipient"`
+		PairingExpiresAt string            `json:"pairing_expires_at"`
 	}
 	if err := json.Unmarshal(pairedOutput, &paired); err != nil {
 		t.Fatal(err)
 	}
-	if paired.PairingCode == first.PairingCode || len(paired.PairingCode) != 47 || paired.PairingExpiresAt == "" || paired.UserOpenID != "" {
+	if paired.PairingCode == first.PairingCode || len(paired.PairingCode) != 47 || paired.PairingExpiresAt == "" || paired.Recipient != nil {
 		t.Fatal("pair did not issue a fresh code for an unbound key")
 	}
 	runKeyCommand(t, binary, process.command.Dir, []string{"keys", "revoke", first.ID}, 0)

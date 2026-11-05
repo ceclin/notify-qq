@@ -47,6 +47,8 @@ docker compose up -d
 
 The HTTP API is available at `http://127.0.0.1:8080`. For scripts on another machine, place an HTTPS reverse proxy in front of this address.
 
+The image includes a Docker readiness check; `docker compose ps` shows its health status.
+
 ### Binary
 
 Alternatively, download the Linux amd64 or arm64 archive from [Releases](https://github.com/ceclin/notify-qq/releases), extract it, and create `.env` as shown above:

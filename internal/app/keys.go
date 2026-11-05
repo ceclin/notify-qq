@@ -22,6 +22,7 @@ import (
 const commandHelp = `Usage:
   notify-qq                         Start the HTTP service and QQ WebSocket worker
   notify-qq --version               Show version, source commit, and build metadata as JSON
+  notify-qq healthcheck             Check local HTTP readiness
   notify-qq keys create --name NAME  Generate a script credential (JSON, shown once)
   notify-qq keys pair ID              Issue a fresh 5-minute code to bind/rebind a recipient
   notify-qq keys list                List key metadata without secrets
@@ -48,12 +49,15 @@ func RunCommand(ctx context.Context, arguments []string, output io.Writer) (comm
 	if len(arguments) == 1 && arguments[0] == "--version" {
 		return writeVersion(output)
 	}
+	if len(arguments) == 1 && arguments[0] == "healthcheck" {
+		return healthcheck(ctx)
+	}
 	if len(arguments) == 1 && (arguments[0] == "--help" || arguments[0] == "-h") {
 		_, err := io.WriteString(output, commandHelp)
 		return oops.In("command").Wrap(err)
 	}
 	if len(arguments) < 2 || arguments[0] != "keys" {
-		return oops.In("command").Code("command_invalid").New("use keys create, keys pair, keys list, or keys revoke; see --help")
+		return oops.In("command").Code("command_invalid").New("unknown command; see --help")
 	}
 	operation := arguments[1]
 	var name, id string

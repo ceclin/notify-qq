@@ -14,4 +14,5 @@ COPY --from=build --chown=65532:65532 /data /data
 USER 65532:65532
 ENV LISTEN_ADDR=0.0.0.0:8080 DATA_DIR=/data
 EXPOSE 8080
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=12 CMD ["/notify-qq", "healthcheck"]
 ENTRYPOINT ["/notify-qq"]

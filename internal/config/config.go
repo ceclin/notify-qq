@@ -56,6 +56,29 @@ func LoadLocal() (Local, error) {
 	return localSettings(settings)
 }
 
+// The probe needs only HTTP settings, without opening storage or requiring QQ credentials.
+func HealthcheckURL() (string, error) {
+	settings, err := readSettings()
+	if err != nil {
+		return "", err
+	}
+	host, port, err := net.SplitHostPort(settings.GetString("LISTEN_ADDR"))
+	if err != nil {
+		return "", logging.WithErrorAttributes(oops.In("config").Code("config_invalid"), slog.String("setting", "LISTEN_ADDR")).Wrapf(err, "listen address is invalid")
+	}
+	prefix, err := normalizeAPIPathPrefix(settings.GetString("API_PATH_PREFIX"))
+	if err != nil {
+		return "", err
+	}
+	switch host {
+	case "", "0.0.0.0":
+		host = "127.0.0.1"
+	case "::":
+		host = "::1"
+	}
+	return "http://" + net.JoinHostPort(host, port) + prefix + "/readyz", nil
+}
+
 func localSettings(settings *viper.Viper) (Local, error) {
 	c := Local{DataDir: settings.GetString("DATA_DIR")}
 	builder := oops.In("config").Code("config_invalid")

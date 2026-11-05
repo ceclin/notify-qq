@@ -41,6 +41,7 @@ func TestBehaviorProcessLifecycle(t *testing.T) {
 		t.Fatalf("build service: %v\n%s", err, output)
 	}
 
+	t.Run("local readiness probe", func(t *testing.T) { testProcessHealthcheck(t, binary) })
 	t.Run("local API key management", func(t *testing.T) { testProcessAPIKeys(t, binary) })
 	t.Run("OpenTelemetry lifecycle", func(t *testing.T) { testProcessTelemetry(t, binary) })
 	t.Run("version reports build metadata without configuration or storage", func(t *testing.T) {

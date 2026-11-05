@@ -65,7 +65,7 @@ Create a key for the script that will send notifications:
 docker compose exec notify-qq /notify-qq keys create --name backup
 ```
 
-Save the returned `key` for your script. In a QQ private chat with the bot, paste and send the entire `pairing_code` within 15 minutes, without a command prefix:
+Save the returned `key` for your script. In a QQ private chat with the bot, paste and send the entire `pairing_code` within 5 minutes, without a command prefix:
 
 ```text
 nqp_...
@@ -131,7 +131,7 @@ docker compose exec notify-qq /notify-qq keys pair KEY_ID
 docker compose exec notify-qq /notify-qq keys revoke KEY_ID
 ```
 
-Use `keys pair` when a pairing code expires or to change a key's recipient. It issues a fresh 15-minute code; the existing recipient stays active until the new recipient binds. Use the `id` from `keys list` to pair or revoke a key. Key changes take effect without restarting the service.
+Use `keys pair` when a pairing code expires or to change a key's recipient. It issues a fresh 5-minute code; the existing recipient stays active until the new recipient binds. Use the `id` from `keys list` to pair or revoke a key. Key changes take effect without restarting the service.
 
 ## Configuration
 

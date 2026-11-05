@@ -21,7 +21,7 @@ import (
 )
 
 const Filename = "notify.sqlite3"
-const PairingLifetime = 15 * time.Minute
+const PairingLifetime = 5 * time.Minute
 
 type Key struct {
 	ID               string  `json:"id"`

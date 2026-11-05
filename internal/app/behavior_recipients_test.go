@@ -171,7 +171,7 @@ func TestBehaviorExpiredAndRevokedPairingCodesCannotBind(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Force expiration through the persisted state so the production SQL deadline
-	// check is exercised without waiting fifteen minutes or replacing the clock.
+	// check is exercised without waiting for expiry or replacing the clock.
 	if _, err := database.ExecContext(t.Context(), "UPDATE api_keys SET pairing_expires_at = ? WHERE id = ?", time.Now().UTC().Format(time.RFC3339), key.ID); err != nil {
 		t.Fatal(err)
 	}

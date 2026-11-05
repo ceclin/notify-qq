@@ -23,7 +23,7 @@ const commandHelp = `Usage:
   notify-qq                         Start the HTTP service and QQ WebSocket worker
   notify-qq --version               Show version, source commit, and build metadata as JSON
   notify-qq keys create --name NAME  Generate a script credential (JSON, shown once)
-  notify-qq keys pair ID              Issue a fresh 15-minute code to bind/rebind a recipient
+  notify-qq keys pair ID              Issue a fresh 5-minute code to bind/rebind a recipient
   notify-qq keys list                List key metadata without secrets
   notify-qq keys revoke ID           Revoke a credential by ID
 

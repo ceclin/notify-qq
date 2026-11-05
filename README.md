@@ -140,6 +140,8 @@ Use `keys pair` when a pairing code expires or to change a key's recipient. It i
 
 Commands print readable text and tables by default; add `--json` for scripts. `keys list` shows active keys; add `--all` to include revoked keys.
 
+Commands only report errors on stderr by default. Add `--verbose` to include success and debug diagnostics.
+
 ## Configuration
 
 Settings are read from `.env` in the working directory and from environment variables. Environment variables take precedence; restart the service after changing them.
@@ -150,7 +152,7 @@ Settings are read from `.env` in the working directory and from environment vari
 | `QQ_APP_SECRET` | Required: QQ bot AppSecret |
 | `LISTEN_ADDR` | `127.0.0.1:8080`; the Docker image uses `0.0.0.0:8080` inside the container |
 | `DATA_DIR` | `./data`; the Docker image uses `/data` |
-| `LOG_LEVEL` | `info`; use `debug` for troubleshooting |
+| `LOG_LEVEL` | `info` for service logs; use `debug` for troubleshooting |
 | `API_PATH_PREFIX` | Empty by default; set `/api/notify-qq` to serve under that path |
 
 When using a path prefix, include it in `NOTIFY_URL`, forward it unchanged through the reverse proxy, and update health-check URLs accordingly.

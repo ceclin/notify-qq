@@ -42,12 +42,10 @@ func readSettings() (*viper.Viper, error) {
 }
 
 type Local struct {
-	DataDir  string
-	LogLevel slog.Level
+	DataDir string
 }
 
-// Local commands share the server's file/environment precedence without needing
-// QQ credentials, pairing configuration, or a valid listener address.
+// Local commands read DATA_DIR without requiring valid server configuration.
 func LoadLocal() (Local, error) {
 	settings, err := readSettings()
 	if err != nil {
@@ -85,9 +83,6 @@ func localSettings(settings *viper.Viper) (Local, error) {
 	if strings.TrimSpace(c.DataDir) == "" {
 		return c, logging.WithErrorAttributes(builder, slog.String("setting", "DATA_DIR")).New("data directory is required")
 	}
-	if err := c.LogLevel.UnmarshalText([]byte(settings.GetString("LOG_LEVEL"))); err != nil {
-		return c, logging.WithErrorAttributes(builder, slog.String("setting", "LOG_LEVEL")).Wrapf(err, "log level is invalid")
-	}
 	return c, nil
 }
 
@@ -102,7 +97,10 @@ func Load() (Config, error) {
 	}
 	c := Config{
 		AppID: settings.GetString("QQ_APP_ID"), AppSecret: settings.GetString("QQ_APP_SECRET"),
-		ListenAddr: settings.GetString("LISTEN_ADDR"), DataDir: local.DataDir, LogLevel: local.LogLevel,
+		ListenAddr: settings.GetString("LISTEN_ADDR"), DataDir: local.DataDir,
+	}
+	if err := c.LogLevel.UnmarshalText([]byte(settings.GetString("LOG_LEVEL"))); err != nil {
+		return c, logging.WithErrorAttributes(oops.In("config").Code("config_invalid"), slog.String("setting", "LOG_LEVEL")).Wrapf(err, "log level is invalid")
 	}
 	c.APIPathPrefix, err = normalizeAPIPathPrefix(settings.GetString("API_PATH_PREFIX"))
 	if err != nil {

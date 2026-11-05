@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -219,11 +220,17 @@ func runKeyCommand(t *testing.T, binary, directory string, arguments []string, e
 
 func runLocalCommand(t *testing.T, binary, directory string, arguments []string, expectedExit int) []byte {
 	t.Helper()
+	stdout, _ := runCommandOutput(t, binary, directory, arguments, expectedExit)
+	return stdout
+}
+
+func runCommandOutput(t *testing.T, binary, directory string, arguments []string, expectedExit int) ([]byte, []byte) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, binary, arguments...)
 	command.Dir = directory
-	overrides := map[string]string{"GORACE": "atexit_sleep_ms=0", "DATA_DIR": directory, "LOG_LEVEL": "debug", "QQ_APP_ID": "", "QQ_APP_SECRET": "", "NOTIFY_API_KEY": "", "PAIRING_CODE": "", "QQ_USER_OPENID": "", "LISTEN_ADDR": "invalid", "API_PATH_PREFIX": "invalid"}
+	overrides := map[string]string{"GORACE": "atexit_sleep_ms=0", "DATA_DIR": directory, "LOG_LEVEL": "invalid", "QQ_APP_ID": "", "QQ_APP_SECRET": "", "NOTIFY_API_KEY": "", "PAIRING_CODE": "", "QQ_USER_OPENID": "", "LISTEN_ADDR": "invalid", "API_PATH_PREFIX": "invalid"}
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
 		if _, overridden := overrides[name]; !overridden {
@@ -248,7 +255,11 @@ func runLocalCommand(t *testing.T, binary, directory string, arguments []string,
 	if actualExit != expectedExit {
 		t.Fatalf("key command exit=%d want=%d, stderr=%s", actualExit, expectedExit, stderr.String())
 	}
-	decoder := json.NewDecoder(&stderr)
+	verbose := slices.Contains(arguments, "--verbose")
+	if expectedExit == 0 && !verbose && stderr.Len() != 0 {
+		t.Fatalf("successful command emitted unsolicited diagnostics: %s", stderr.String())
+	}
+	decoder := json.NewDecoder(bytes.NewReader(stderr.Bytes()))
 	failures := 0
 	for {
 		var event map[string]any
@@ -256,6 +267,9 @@ func runLocalCommand(t *testing.T, binary, directory string, arguments []string,
 			break
 		} else if err != nil {
 			t.Fatal(err)
+		}
+		if !verbose && event["level"] != "ERROR" {
+			t.Fatalf("non-error CLI diagnostic requires --verbose: %v", event)
 		}
 		if event["level"] == "ERROR" {
 			failures++
@@ -281,5 +295,5 @@ func runLocalCommand(t *testing.T, binary, directory string, arguments []string,
 			}
 		}
 	}
-	return stdout.Bytes()
+	return stdout.Bytes(), stderr.Bytes()
 }

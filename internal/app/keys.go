@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"os"
 	"slices"
 	"strings"
 	"time"
@@ -25,11 +24,11 @@ type keyCommandOptions struct {
 	json bool
 }
 
-func newKeysCommand(commandID string, jsonOutput *bool) *cobra.Command {
+func newKeysCommand(jsonOutput *bool) *cobra.Command {
 	keys := &cobra.Command{
 		Use:   "keys",
 		Short: "Manage API keys and recipient pairing",
-		Long:  "Manage API keys and recipient pairing.\n\nUses DATA_DIR and LOG_LEVEL from .env/environment; QQ credentials are not required.",
+		Long:  "Manage API keys and recipient pairing.\n\nUses DATA_DIR from .env/environment; QQ credentials are not required.",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			return command.Help()
@@ -49,7 +48,7 @@ func newKeysCommand(commandID string, jsonOutput *bool) *cobra.Command {
 			return nil
 		},
 		RunE: func(command *cobra.Command, _ []string) error {
-			return runKeys(command, commandID, keyCommandOptions{name: name, json: *jsonOutput})
+			return runKeys(command, keyCommandOptions{name: name, json: *jsonOutput})
 		},
 	}
 	create.Flags().StringVar(&name, "name", "", "Name of the sending script (required)")
@@ -59,7 +58,7 @@ func newKeysCommand(commandID string, jsonOutput *bool) *cobra.Command {
 		Short: "List active key metadata without secrets",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			return runKeys(command, commandID, keyCommandOptions{all: all, json: *jsonOutput})
+			return runKeys(command, keyCommandOptions{all: all, json: *jsonOutput})
 		},
 	}
 	list.Flags().BoolVar(&all, "all", false, "Include revoked keys")
@@ -81,14 +80,14 @@ func newKeysCommand(commandID string, jsonOutput *bool) *cobra.Command {
 				return nil
 			},
 			RunE: func(command *cobra.Command, arguments []string) error {
-				return runKeys(command, commandID, keyCommandOptions{id: arguments[0], json: *jsonOutput})
+				return runKeys(command, keyCommandOptions{id: arguments[0], json: *jsonOutput})
 			},
 		})
 	}
 	return keys
 }
 
-func runKeys(command *cobra.Command, commandID string, options keyCommandOptions) (commandError error) {
+func runKeys(command *cobra.Command, options keyCommandOptions) (commandError error) {
 	ctx := command.Context()
 	operation := command.Name()
 	started := time.Now()
@@ -96,7 +95,7 @@ func runKeys(command *cobra.Command, commandID string, options keyCommandOptions
 	if err != nil {
 		return err
 	}
-	logger := slog.New(logging.NewLogger(os.Stderr, settings.LogLevel).Handler().WithAttrs([]slog.Attr{slog.String("command_id", commandID), slog.String("operation", "keys_"+operation)}))
+	logger := slog.New(logging.FromContext(ctx).Handler().WithAttrs([]slog.Attr{slog.String("operation", "keys_"+operation)}))
 	ctx = logging.WithLogger(ctx, logger)
 	command.SetContext(ctx)
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)

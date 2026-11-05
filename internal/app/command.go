@@ -15,10 +15,10 @@ import (
 
 func RunCommand(ctx context.Context, arguments []string, output io.Writer) error {
 	commandID := ulid.Make().String()
-	logger := slog.New(logging.NewLogger(os.Stderr, slog.LevelInfo).Handler().WithAttrs([]slog.Attr{slog.String("command_id", commandID)}))
+	logger := slog.New(logging.NewLogger(os.Stderr, slog.LevelError).Handler().WithAttrs([]slog.Attr{slog.String("command_id", commandID)}))
 	ctx = logging.WithLogger(ctx, logger)
 	started := time.Now()
-	var showVersion, jsonOutput, serving bool
+	var showVersion, jsonOutput, verbose, serving bool
 	root := &cobra.Command{
 		Use:           "notify-qq",
 		Short:         "Send notifications to QQ private chats and groups",
@@ -27,6 +27,12 @@ func RunCommand(ctx context.Context, arguments []string, output io.Writer) error
 		SilenceErrors: true,
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
+		},
+		PersistentPreRun: func(command *cobra.Command, _ []string) {
+			if verbose {
+				logger := slog.New(logging.NewLogger(os.Stderr, slog.LevelDebug).Handler().WithAttrs([]slog.Attr{slog.String("command_id", commandID)}))
+				command.SetContext(logging.WithLogger(command.Context(), logger))
+			}
 		},
 		RunE: func(command *cobra.Command, _ []string) error {
 			if showVersion {
@@ -37,6 +43,7 @@ func RunCommand(ctx context.Context, arguments []string, output io.Writer) error
 	}
 	root.Flags().BoolVar(&showVersion, "version", false, "Show version and build metadata")
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output results as JSON")
+	root.PersistentFlags().BoolVar(&verbose, "verbose", false, "Show command success and debug diagnostics on stderr")
 	root.AddCommand(
 		&cobra.Command{
 			Use:   "serve",
@@ -56,7 +63,7 @@ func RunCommand(ctx context.Context, arguments []string, output io.Writer) error
 				return healthcheck(command.Context())
 			},
 		},
-		newKeysCommand(commandID, &jsonOutput),
+		newKeysCommand(&jsonOutput),
 	)
 	// An empty list must not fall back to Cobra's process arguments.
 	root.SetArgs(append([]string{}, arguments...))

@@ -62,6 +62,36 @@ func testProcessCLI(t *testing.T, binary string) {
 		}
 	})
 
+	t.Run("success and debug diagnostics require verbose", func(t *testing.T) {
+		directory := t.TempDir()
+		runLocalCommand(t, binary, directory, []string{"keys", "create", "--name", "quiet"}, 0)
+		for _, arguments := range [][]string{
+			{"keys", "list", "--verbose"},
+			{"keys", "list", "--json", "--verbose"},
+			{"--verbose", "keys", "create", "--name", "verbose", "--json"},
+		} {
+			stdout, diagnostics := runCommandOutput(t, binary, directory, arguments, 0)
+			if len(stdout) == 0 || len(diagnostics) == 0 {
+				t.Fatal("verbose command omitted its result or diagnostics")
+			}
+			levels := make(map[string]bool)
+			completed := false
+			for line := range strings.SplitSeq(strings.TrimSpace(string(diagnostics)), "\n") {
+				var event map[string]any
+				if err := json.Unmarshal([]byte(line), &event); err != nil {
+					t.Fatal(err)
+				}
+				levels[event["level"].(string)] = true
+				if event["event"] == "command_completed" {
+					completed = true
+				}
+			}
+			if !levels["INFO"] || !levels["DEBUG"] || !completed {
+				t.Fatal("--verbose did not enable success and debug diagnostics")
+			}
+		}
+	})
+
 	t.Run("readable key lifecycle and explicit JSON output", func(t *testing.T) {
 		directory := t.TempDir()
 		created := runLocalCommand(t, binary, directory, []string{"keys", "create", "--name", "certimate"}, 0)

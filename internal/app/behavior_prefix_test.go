@@ -27,7 +27,7 @@ func TestBehaviorAPIPathPrefixScopesAllEndpoints(t *testing.T) {
 	}
 	status, _, _ = fixture.notify(t, `{"content":"before pairing"}`)
 	requireStatus(t, status, http.StatusConflict)
-	if err := fixture.deliverMessage(t, "owner-openid", "bind "+fixture.pairingCode); err != nil {
+	if err := fixture.deliverMessage(t, "owner-openid", fixture.pairingCode); err != nil {
 		t.Fatal(err)
 	}
 	status, result, _ = fixture.request(t, http.MethodGet, prefix+"/status", "", authorization)

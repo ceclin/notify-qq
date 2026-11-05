@@ -11,7 +11,8 @@ func TestBehaviorPrivateMessagesAcknowledgeSenderWithoutChangingRecipient(t *tes
 		t.Run("recipient="+recipient, func(t *testing.T) {
 			fixture := startBehaviorService(t, recipient, nil)
 			allowed := map[string]bool{"Got it.": true, "Noted.": true, "Copy that.": true, "Received.": true}
-			for index, content := range []string{"hello", fixture.apiKey, "你好 👋", ""} {
+			contents := []string{"hello", fixture.apiKey, "你好 👋", "", "bind " + fixture.pairingCode, "code: " + fixture.pairingCode}
+			for index, content := range contents {
 				messageID := fmt.Sprintf("private-message-%d", index)
 				if err := fixture.deliverMessageWithID(t, "visitor", content, messageID); err != nil {
 					t.Fatal(err)
@@ -24,20 +25,19 @@ func TestBehaviorPrivateMessagesAcknowledgeSenderWithoutChangingRecipient(t *tes
 			}
 			status, result, _ := fixture.request(t, http.MethodGet, "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})
 			requireStatus(t, status, http.StatusOK)
-			if result["user_openid"] != recipient || fixture.sendCalls.Load() != 4 {
+			if result["user_openid"] != recipient || int(fixture.sendCalls.Load()) != len(contents) {
 				t.Fatal("ordinary messages changed pairing or sent more than one reply each")
 			}
 		})
 	}
 }
 
-func TestBehaviorBindingCommandsExplainRejectedInput(t *testing.T) {
+func TestBehaviorInvalidPairingCodesReceiveFailureReply(t *testing.T) {
 	fixture := startBehaviorService(t, "", nil)
 	for index, scenario := range []struct{ content, reply string }{
-		{"bind", "Usage: bind <pairing_code>"},
-		{"bind first second", "Usage: bind <pairing_code>"},
-		{"bind invalid-code", "Pairing code is invalid or expired. Please generate a new one."},
-		{"bind " + fixture.apiKey, "Pairing code is invalid or expired. Please generate a new one."},
+		{"nqp_", "Pairing code is invalid or expired. Please generate a new one."},
+		{"nqp_invalid-code", "Pairing code is invalid or expired. Please generate a new one."},
+		{fixture.pairingCode + " extra", "Pairing code is invalid or expired. Please generate a new one."},
 	} {
 		messageID := fmt.Sprintf("binding-message-%d", index)
 		if err := fixture.deliverMessageWithID(t, "visitor", scenario.content, messageID); err != nil {
@@ -45,13 +45,28 @@ func TestBehaviorBindingCommandsExplainRejectedInput(t *testing.T) {
 		}
 		message := fixture.messages[index]
 		if message["content"] != scenario.reply || message["msg_id"] != messageID || message["recipient"] != "visitor" || message["markdown"] != nil {
-			t.Fatal("invalid binding command did not receive the appropriate private reply")
+			t.Fatal("invalid pairing code did not receive the appropriate private reply")
 		}
 	}
 	status, result, _ := fixture.request(t, http.MethodGet, "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})
 	requireStatus(t, status, http.StatusOK)
 	if result["paired"] != false {
-		t.Fatal("invalid command changed the recipient")
+		t.Fatal("invalid pairing code changed the recipient")
+	}
+}
+
+func TestBehaviorPastedPairingCodeTrimsSurroundingWhitespace(t *testing.T) {
+	fixture := startBehaviorService(t, "", nil)
+	if err := fixture.deliverMessage(t, "owner-openid", " \t\n"+fixture.pairingCode+"\n\t "); err != nil {
+		t.Fatal(err)
+	}
+	status, result, _ := fixture.request(t, http.MethodGet, "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})
+	requireStatus(t, status, http.StatusOK)
+	if result["paired"] != true || result["user_openid"] != "owner-openid" || fixture.sendCalls.Load() != 1 {
+		t.Fatal("pasted pairing code did not bind its sender")
+	}
+	if fixture.messages[0]["content"] != "Paired successfully. Notifications are ready." || fixture.messages[0]["msg_id"] != "binding-message" {
+		t.Fatal("pasted pairing code did not receive its confirmation")
 	}
 }
 

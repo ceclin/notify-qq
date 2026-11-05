@@ -292,10 +292,10 @@ func (s *service) replyFromMessage(ctx context.Context, data json.RawMessage) er
 		return logging.OperationError(ctx, "qq_reply", "invalid_message", "QQ message has no message ID or sender", nil)
 	}
 	content := randomAcknowledgement()
-	fields := strings.Fields(message.Content)
-	if len(fields) > 0 && fields[0] == "bind" {
+	code := strings.TrimSpace(message.Content)
+	if strings.HasPrefix(code, "nqp_") {
 		var err error
-		content, err = s.bindingReply(ctx, message.Author.UserOpenID, fields)
+		content, err = s.bindingReply(ctx, message.Author.UserOpenID, code)
 		if err != nil {
 			return err
 		}
@@ -311,11 +311,8 @@ func (s *service) replyFromMessage(ctx context.Context, data json.RawMessage) er
 	return nil
 }
 
-func (s *service) bindingReply(ctx context.Context, userOpenID string, fields []string) (string, error) {
-	if len(fields) != 2 {
-		return "Usage: bind <pairing_code>", nil
-	}
-	key, changed, err := s.keys.Bind(ctx, fields[1], userOpenID)
+func (s *service) bindingReply(ctx context.Context, userOpenID, code string) (string, error) {
+	key, changed, err := s.keys.Bind(ctx, code, userOpenID)
 	if err != nil {
 		return "", logging.OperationError(ctx, "pairing", "pairing_failed", "Recipient binding could not be saved", err)
 	}

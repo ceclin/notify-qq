@@ -25,7 +25,7 @@ func TestBehaviorPairingReplyFailureKeepsBinding(t *testing.T) {
 			_, _ = io.WriteString(w, `{"id":"qq-message-id"}`)
 		}
 	}, logging.NewLogger(&logs, slog.LevelDebug))
-	if err := fixture.deliverMessage(t, "owner-openid", "bind "+fixture.pairingCode); err != nil {
+	if err := fixture.deliverMessage(t, "owner-openid", fixture.pairingCode); err != nil {
 		t.Fatalf("confirmation failure must not fail the persisted binding: %v", err)
 	}
 	status, result, _ := fixture.request(t, http.MethodGet, "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})
@@ -33,7 +33,7 @@ func TestBehaviorPairingReplyFailureKeepsBinding(t *testing.T) {
 	if result["paired"] != true || result["user_openid"] != "owner-openid" {
 		t.Fatal("confirmation failure lost the recipient")
 	}
-	if err := fixture.deliverMessage(t, "intruder", "bind "+fixture.pairingCode); err != nil {
+	if err := fixture.deliverMessage(t, "intruder", fixture.pairingCode); err != nil {
 		t.Fatal(err)
 	}
 	if fixture.sendCalls.Load() != 2 || fixture.messages[1]["content"] != "Pairing code is invalid or expired. Please generate a new one." {
@@ -58,7 +58,7 @@ func TestBehaviorPairingReplyFailureKeepsBinding(t *testing.T) {
 
 func TestBehaviorPairingWithoutMessageIDDoesNotConsumeCode(t *testing.T) {
 	fixture := startBehaviorService(t, "", nil)
-	if err := fixture.deliverMessageWithID(t, "owner-openid", "bind "+fixture.pairingCode, ""); err == nil {
+	if err := fixture.deliverMessageWithID(t, "owner-openid", fixture.pairingCode, ""); err == nil {
 		t.Fatal("binding without a reply message ID was accepted")
 	}
 	status, result, _ := fixture.request(t, http.MethodGet, "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})
@@ -66,7 +66,7 @@ func TestBehaviorPairingWithoutMessageIDDoesNotConsumeCode(t *testing.T) {
 	if result["paired"] != false || fixture.sendCalls.Load() != 0 {
 		t.Fatal("missing message ID changed binding state or sent a proactive reply")
 	}
-	if err := fixture.deliverMessage(t, "owner-openid", "bind "+fixture.pairingCode); err != nil {
+	if err := fixture.deliverMessage(t, "owner-openid", fixture.pairingCode); err != nil {
 		t.Fatal(err)
 	}
 	status, result, _ = fixture.request(t, http.MethodGet, "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})

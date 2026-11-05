@@ -65,15 +65,15 @@ Create a key for the script that will send notifications:
 docker compose exec notify-qq /notify-qq keys create --name backup
 ```
 
-Save the returned `key` for your script. In a QQ private chat with the bot, send the returned `pairing_code` within 15 minutes:
+Save the returned `key` for your script. In a QQ private chat with the bot, paste and send the entire `pairing_code` within 15 minutes, without a command prefix:
 
 ```text
-bind <pairing_code>
+nqp_...
 ```
 
 The bot confirms a successful binding. The API key and pairing code are shown only once; each pairing code can be used once. Give each script its own key, and share its pairing code only with the intended recipient.
 
-Other messages receive a short acknowledgement, such as “Got it.” Binding commands return their result or a prompt to correct the command or pairing code.
+The bot explains when a pairing code is invalid or expired. Other messages receive a short acknowledgement, such as “Got it.”
 
 ## Send a notification
 

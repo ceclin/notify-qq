@@ -204,16 +204,16 @@ func TestBehaviorPairAndNotifyAcrossRestart(t *testing.T) {
 	fixture := startBehaviorService(t, "", nil)
 	status, _, _ := fixture.notify(t, `{"content":"before pairing"}`)
 	requireStatus(t, status, 409)
-	if err := fixture.deliverMessage(t, "other-openid", "bind wrong-code"); err != nil {
+	if err := fixture.deliverMessage(t, "other-openid", "nqp_wrong-code"); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.deliverMessage(t, "owner-openid", "bind "+fixture.pairingCode); err != nil {
+	if err := fixture.deliverMessage(t, "owner-openid", fixture.pairingCode); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.deliverMessage(t, "other-openid", "bind "+fixture.pairingCode); err != nil {
+	if err := fixture.deliverMessage(t, "other-openid", fixture.pairingCode); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.deliverMessage(t, "owner-openid", "bind "+fixture.pairingCode); err != nil {
+	if err := fixture.deliverMessage(t, "owner-openid", fixture.pairingCode); err != nil {
 		t.Fatal(err)
 	}
 	status, result, _ := fixture.request(t, "GET", "/status", "", map[string]string{"Authorization": "Bearer " + fixture.apiKey})
@@ -566,7 +566,7 @@ func TestBehaviorPairingStorageFailureLeavesRecipientUnbound(t *testing.T) {
 	if _, err := database.ExecContext(t.Context(), "ALTER TABLE api_keys RENAME TO unavailable_keys"); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.deliverMessage(t, "owner-openid", "bind "+fixture.pairingCode); err == nil {
+	if err := fixture.deliverMessage(t, "owner-openid", fixture.pairingCode); err == nil {
 		t.Fatal("failed binding storage reported success")
 	}
 	if _, err := database.ExecContext(t.Context(), "ALTER TABLE unavailable_keys RENAME TO api_keys"); err != nil {
@@ -577,7 +577,7 @@ func TestBehaviorPairingStorageFailureLeavesRecipientUnbound(t *testing.T) {
 	if result["paired"] != false {
 		t.Fatal("failed persistence changed recipient")
 	}
-	if err := fixture.deliverMessage(t, "owner-openid", "bind "+fixture.pairingCode); err != nil {
+	if err := fixture.deliverMessage(t, "owner-openid", fixture.pairingCode); err != nil {
 		t.Fatal(err)
 	}
 	status, _, _ = fixture.notify(t, `{"content":"after storage repair"}`)

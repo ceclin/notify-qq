@@ -56,18 +56,18 @@ func TestBehaviorKeyRecipientsStayIsolatedAcrossRebindingAndRestart(t *testing.T
 	if fixture.tokenCalls.Load() != 0 {
 		t.Fatal("unpaired notification contacted QQ")
 	}
-	if err := fixture.deliverMessage(t, "alice", "bind "+firstCode); err != nil {
+	if err := fixture.deliverMessage(t, "alice", firstCode); err != nil {
 		t.Fatal(err)
 	}
 	requireRecipient(firstSecret, "alice")
 	requireRecipient(secondSecret, "")
-	if err := fixture.deliverMessage(t, "bob", "bind "+secondCode); err != nil {
+	if err := fixture.deliverMessage(t, "bob", secondCode); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.deliverMessage(t, "intruder", "bind "+firstCode); err != nil {
+	if err := fixture.deliverMessage(t, "intruder", firstCode); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.deliverMessage(t, "intruder", "bind "+firstSecret); err != nil {
+	if err := fixture.deliverMessage(t, "intruder", firstSecret); err != nil {
 		t.Fatal(err)
 	}
 	requireRecipient(firstSecret, "alice")
@@ -87,11 +87,11 @@ func TestBehaviorKeyRecipientsStayIsolatedAcrossRebindingAndRestart(t *testing.T
 	// Issuing a replacement code leaves the current recipient active.
 	requireRecipient(firstSecret, "alice")
 	request(firstSecret, "/notify", `{"content":"before rebind"}`, http.StatusOK)
-	if err := fixture.deliverMessage(t, "intruder", "bind "+superseded); err != nil {
+	if err := fixture.deliverMessage(t, "intruder", superseded); err != nil {
 		t.Fatal(err)
 	}
 	requireRecipient(firstSecret, "alice")
-	if err := fixture.deliverMessage(t, "charlie", "bind "+replacement); err != nil {
+	if err := fixture.deliverMessage(t, "charlie", replacement); err != nil {
 		t.Fatal(err)
 	}
 	requireRecipient(firstSecret, "charlie")
@@ -175,7 +175,7 @@ func TestBehaviorExpiredAndRevokedPairingCodesCannotBind(t *testing.T) {
 	if _, err := database.ExecContext(t.Context(), "UPDATE api_keys SET pairing_expires_at = ? WHERE id = ?", time.Now().UTC().Format(time.RFC3339), key.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.deliverMessage(t, "alice", "bind "+code); err != nil {
+	if err := fixture.deliverMessage(t, "alice", code); err != nil {
 		t.Fatal(err)
 	}
 	status, result, _ := fixture.request(t, http.MethodGet, "/status", "", map[string]string{"Authorization": "Bearer " + secret})
@@ -186,7 +186,7 @@ func TestBehaviorExpiredAndRevokedPairingCodesCannotBind(t *testing.T) {
 	if _, err := fixture.service.keys.Revoke(t.Context(), key.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.deliverMessage(t, "alice", "bind "+code); err != nil {
+	if err := fixture.deliverMessage(t, "alice", code); err != nil {
 		t.Fatal(err)
 	}
 	revokedCreated, err := fixture.service.keys.Create(t.Context(), "revoked")
@@ -201,7 +201,7 @@ func TestBehaviorExpiredAndRevokedPairingCodesCannotBind(t *testing.T) {
 	if _, err := fixture.service.keys.Revoke(t.Context(), revoked.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := fixture.deliverMessage(t, "bob", "bind "+revokedCode); err != nil {
+	if err := fixture.deliverMessage(t, "bob", revokedCode); err != nil {
 		t.Fatal(err)
 	}
 	listed, err := fixture.service.keys.List(t.Context())

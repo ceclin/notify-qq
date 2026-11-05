@@ -13,6 +13,7 @@ type LinkButton struct {
 }
 
 const (
+	messageTypeText          = 0
 	messageTypeMarkdown      = 2
 	buttonActionLink         = 0
 	buttonPermissionEveryone = 2
@@ -22,9 +23,10 @@ const (
 
 type sendMessageRequest struct {
 	MsgType  int             `json:"msg_type"`
+	Content  string          `json:"content,omitempty"`
 	MsgID    string          `json:"msg_id,omitempty"`
 	MsgSeq   int             `json:"msg_seq,omitempty"`
-	Markdown markdownContent `json:"markdown"`
+	Markdown markdownContent `json:"markdown,omitzero"`
 	Keyboard *keyboard       `json:"keyboard,omitempty"`
 }
 

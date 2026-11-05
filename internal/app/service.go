@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"mime"
 	"net/http"
 	"strings"
@@ -273,10 +274,10 @@ func (s *service) handleQQEvent(ctx context.Context, event qq.Event) error {
 		logging.FromContext(ctx).LogAttrs(ctx, slog.LevelDebug, "QQ event requires no action", slog.String("event", "qq_event_ignored"))
 		return nil
 	}
-	return s.pairFromMessage(ctx, event.Data)
+	return s.replyFromMessage(ctx, event.Data)
 }
 
-func (s *service) pairFromMessage(ctx context.Context, data json.RawMessage) error {
+func (s *service) replyFromMessage(ctx context.Context, data json.RawMessage) error {
 	var message struct {
 		ID      string `json:"id"`
 		Content string `json:"content"`
@@ -285,32 +286,47 @@ func (s *service) pairFromMessage(ctx context.Context, data json.RawMessage) err
 		} `json:"author"`
 	}
 	if err := json.Unmarshal(data, &message); err != nil {
-		return logging.OperationError(ctx, "pairing", "invalid_message", "QQ message event is invalid", err)
+		return logging.OperationError(ctx, "qq_reply", "invalid_message", "QQ message event is invalid", err)
 	}
+	if message.ID == "" || message.Author.UserOpenID == "" {
+		return logging.OperationError(ctx, "qq_reply", "invalid_message", "QQ message has no message ID or sender", nil)
+	}
+	content := randomAcknowledgement()
 	fields := strings.Fields(message.Content)
-	if len(fields) != 2 || fields[0] != "bind" {
-		logging.FromContext(ctx).LogAttrs(ctx, slog.LevelDebug, "Message does not change notification recipient", slog.String("event", "pairing_ignored"), slog.String("reason", "not_binding_command"))
+	if len(fields) > 0 && fields[0] == "bind" {
+		var err error
+		content, err = s.bindingReply(ctx, message.Author.UserOpenID, fields)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := s.qq.Reply(ctx, message.Author.UserOpenID, message.ID, content)
+	if err != nil {
+		// Binding may already be committed; a failed reply must not replay the event.
+		replyError := logging.OperationError(ctx, "qq_reply", "qq_reply_failed", "QQ message reply could not be sent", err)
+		logging.FromContext(ctx).LogAttrs(ctx, slog.LevelError, "QQ message reply failed", slog.String("event", "qq_reply_failed"), logging.ErrorAttribute(replyError))
 		return nil
 	}
-	if message.ID == "" {
-		return logging.OperationError(ctx, "pairing", "invalid_message", "QQ binding message has no message ID", nil)
+	logging.FromContext(ctx).LogAttrs(ctx, slog.LevelInfo, "QQ message reply accepted", slog.String("event", "qq_reply_accepted"))
+	return nil
+}
+
+func (s *service) bindingReply(ctx context.Context, userOpenID string, fields []string) (string, error) {
+	if len(fields) != 2 {
+		return "Usage: bind <pairing_code>", nil
 	}
-	key, changed, err := s.keys.Bind(ctx, fields[1], message.Author.UserOpenID)
+	key, changed, err := s.keys.Bind(ctx, fields[1], userOpenID)
 	if err != nil {
-		return logging.OperationError(ctx, "pairing", "pairing_failed", "Recipient binding could not be saved", err)
+		return "", logging.OperationError(ctx, "pairing", "pairing_failed", "Recipient binding could not be saved", err)
 	}
 	if !changed {
-		logging.FromContext(ctx).LogAttrs(ctx, slog.LevelDebug, "Message does not change notification recipient", slog.String("event", "pairing_ignored"), slog.String("reason", "invalid_pairing_credentials"))
-		return nil
+		return "Pairing code is invalid or expired. Please generate a new one.", nil
 	}
 	logging.FromContext(ctx).LogAttrs(ctx, slog.LevelInfo, "Notification recipient paired", slog.String("event", "recipient_paired"), slog.String("api_key_id", key.ID), slog.String("recipient_ref", recipientReference(key.UserOpenID)))
-	_, err = s.qq.Reply(ctx, key.UserOpenID, message.ID, qq.Notification{Markdown: "绑定成功，现在可以接收通知了。"})
-	if err != nil {
-		// The code is already consumed; replaying this event cannot retry its reply.
-		replyError := logging.OperationError(ctx, "pairing", "pairing_reply_failed", "Recipient paired, but confirmation could not be sent", err)
-		logging.FromContext(ctx).LogAttrs(ctx, slog.LevelError, "Pairing confirmation failed", slog.String("event", "pairing_reply_failed"), slog.String("api_key_id", key.ID), logging.ErrorAttribute(replyError))
-		return nil
-	}
-	logging.FromContext(ctx).LogAttrs(ctx, slog.LevelInfo, "Pairing confirmation accepted by QQ", slog.String("event", "pairing_reply_accepted"), slog.String("api_key_id", key.ID))
-	return nil
+	return "Paired successfully. Notifications are ready.", nil
+}
+
+func randomAcknowledgement() string {
+	replies := [...]string{"Got it.", "Noted.", "Copy that.", "Received."}
+	return replies[rand.IntN(len(replies))]
 }

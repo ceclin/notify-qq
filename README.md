@@ -73,6 +73,8 @@ bind <pairing_code>
 
 The bot confirms a successful binding. The API key and pairing code are shown only once; each pairing code can be used once. Give each script its own key, and share its pairing code only with the intended recipient.
 
+Other messages receive a short acknowledgement, such as “Got it.” Binding commands return their result or a prompt to correct the command or pairing code.
+
 ## Send a notification
 
 In your script's environment, set the service URL and the API key returned above:

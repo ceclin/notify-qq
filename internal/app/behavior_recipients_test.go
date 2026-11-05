@@ -111,12 +111,12 @@ func TestBehaviorKeyRecipientsStayIsolatedAcrossRebindingAndRestart(t *testing.T
 	requireRecipient(secondSecret, "bob")
 	request(firstSecret, "/notify", `{"content":"after restart"}`, http.StatusOK)
 	request(secondSecret, "/notify", `{"content":"bob after restart"}`, http.StatusOK)
-	for index, recipient := range []string{"alice", "bob", "alice", "bob", "alice", "charlie", "charlie", "bob"} {
+	for index, recipient := range []string{"alice", "bob", "intruder", "intruder", "alice", "bob", "alice", "intruder", "charlie", "charlie", "bob"} {
 		if fixture.messages[index]["recipient"] != recipient {
 			t.Fatalf("notification %d delivered to incorrect recipient", index)
 		}
 	}
-	if fixture.sendCalls.Load() != 8 {
+	if fixture.sendCalls.Load() != 11 {
 		t.Fatal("invalid requests reached QQ")
 	}
 	entries, err := fixture.service.keys.List(t.Context())
@@ -215,8 +215,13 @@ func TestBehaviorExpiredAndRevokedPairingCodesCannotBind(t *testing.T) {
 	}
 	status, _, _ = fixture.request(t, http.MethodPost, "/notify", `{"content":"revoked"}`, map[string]string{"Authorization": "Bearer " + revokedSecret})
 	requireStatus(t, status, http.StatusUnauthorized)
-	if fixture.sendCalls.Load() != 0 {
-		t.Fatal("rejected bindings sent notifications")
+	if fixture.sendCalls.Load() != 3 {
+		t.Fatal("rejected bindings did not receive one reply each")
+	}
+	for _, message := range fixture.messages {
+		if message["content"] != "Pairing code is invalid or expired. Please generate a new one." || message["msg_id"] != "binding-message" || message["markdown"] != nil {
+			t.Fatal("rejected binding sent anything other than its failure reply")
+		}
 	}
 }
 

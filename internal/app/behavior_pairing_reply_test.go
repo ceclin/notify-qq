@@ -36,18 +36,18 @@ func TestBehaviorPairingReplyFailureKeepsBinding(t *testing.T) {
 	if err := fixture.deliverMessage(t, "intruder", "bind "+fixture.pairingCode); err != nil {
 		t.Fatal(err)
 	}
-	if fixture.sendCalls.Load() != 1 {
-		t.Fatal("a consumed code retried the confirmation")
+	if fixture.sendCalls.Load() != 2 || fixture.messages[1]["content"] != "Pairing code is invalid or expired. Please generate a new one." {
+		t.Fatal("a consumed code received a second success confirmation")
 	}
 	reject.Store(false)
 	status, _, _ = fixture.notify(t, `{"content":"after confirmation failure"}`)
 	requireStatus(t, status, http.StatusOK)
-	if fixture.messages[1]["recipient"] != "owner-openid" || fixture.messages[1]["msg_id"] != nil {
+	if fixture.messages[2]["recipient"] != "owner-openid" || fixture.messages[2]["msg_id"] != nil {
 		t.Fatal("confirmation failure changed subsequent notification delivery")
 	}
 	entries := logs.String()
-	if strings.Count(entries, `"event":"pairing_reply_failed"`) != 1 || strings.Contains(entries, `"event":"pairing_reply_accepted"`) {
-		t.Fatal("confirmation failure was not reported once at its owning boundary")
+	if strings.Count(entries, `"event":"qq_reply_failed"`) != 2 || strings.Contains(entries, `"event":"qq_reply_accepted"`) {
+		t.Fatal("reply failures were not reported once per event at their owning boundary")
 	}
 	for _, private := range []string{fixture.apiKey, fixture.pairingCode, "private-upstream-error"} {
 		if strings.Contains(entries, private) {

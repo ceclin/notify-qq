@@ -159,10 +159,8 @@ func (q *Client) Send(ctx context.Context, userOpenID string, notification Notif
 	return q.send(ctx, userOpenID, messagePayload(notification))
 }
 
-func (q *Client) Reply(ctx context.Context, userOpenID, messageID string, notification Notification) (Message, error) {
-	payload := messagePayload(notification)
-	payload.MsgID = messageID
-	payload.MsgSeq = 1
+func (q *Client) Reply(ctx context.Context, userOpenID, messageID, content string) (Message, error) {
+	payload := sendMessageRequest{MsgType: messageTypeText, Content: content, MsgID: messageID, MsgSeq: 1}
 	return q.send(ctx, userOpenID, payload)
 }
 

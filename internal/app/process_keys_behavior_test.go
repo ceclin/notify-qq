@@ -94,7 +94,19 @@ func testProcessAPIKeys(t *testing.T, binary string) {
 	if !bytes.Contains(duplicate, []byte(`"changed":false`)) {
 		t.Fatal("repeated revocation was not idempotent")
 	}
-	listed := runKeyCommand(t, binary, process.command.Dir, []string{"keys", "list"}, 0)
+	active := runKeyCommand(t, binary, process.command.Dir, []string{"keys", "list"}, 0)
+	var activeEntries []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(active, &activeEntries); err != nil || len(activeEntries) != 2 {
+		t.Fatal("default listing did not retain only active keys")
+	}
+	for _, entry := range activeEntries {
+		if entry.ID == first.ID {
+			t.Fatal("default listing included a revoked key")
+		}
+	}
+	listed := runKeyCommand(t, binary, process.command.Dir, []string{"keys", "list", "--all"}, 0)
 	var entries []struct {
 		ID        string  `json:"id"`
 		RevokedAt *string `json:"revoked_at"`
@@ -201,6 +213,11 @@ func mustReadProcessFile(t *testing.T, path string) []byte {
 }
 
 func runKeyCommand(t *testing.T, binary, directory string, arguments []string, expectedExit int) []byte {
+	t.Helper()
+	return runLocalCommand(t, binary, directory, append([]string{"--json"}, arguments...), expectedExit)
+}
+
+func runLocalCommand(t *testing.T, binary, directory string, arguments []string, expectedExit int) []byte {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()

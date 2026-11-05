@@ -2,101 +2,103 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"flag"
-	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/samber/oops"
+	"github.com/spf13/cobra"
 
 	"github.com/ceclin/notify-qq/internal/apikey"
 	"github.com/ceclin/notify-qq/internal/config"
 	"github.com/ceclin/notify-qq/internal/logging"
 )
 
-const commandHelp = `Usage:
-  notify-qq                         Start the HTTP service and QQ WebSocket worker
-  notify-qq --version               Show version, source commit, and build metadata as JSON
-  notify-qq healthcheck             Check local HTTP readiness
-  notify-qq keys create --name NAME  Generate a script credential (JSON, shown once)
-  notify-qq keys pair ID              Issue a fresh 5-minute code to bind/rebind a recipient
-  notify-qq keys list                List key metadata without secrets
-  notify-qq keys revoke ID           Revoke a credential by ID
+type keyCommandOptions struct {
+	name string
+	id   string
+	all  bool
+	json bool
+}
 
-Key commands use DATA_DIR and LOG_LEVEL from .env/environment and need no QQ credentials.
-`
-
-// RunCommand keeps signals and exit status in cmd while sharing configuration,
-// SQLite access, and one-time error reporting with the server application.
-func RunCommand(ctx context.Context, arguments []string, output io.Writer) (commandError error) {
-	if len(arguments) == 0 {
-		return Run(ctx)
+func newKeysCommand(commandID string, jsonOutput *bool) *cobra.Command {
+	keys := &cobra.Command{
+		Use:   "keys",
+		Short: "Manage API keys and recipient pairing",
+		Long:  "Manage API keys and recipient pairing.\n\nUses DATA_DIR and LOG_LEVEL from .env/environment; QQ credentials are not required.",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			return command.Help()
+		},
 	}
-	commandID := ulid.Make().String()
-	logger := slog.New(logging.NewLogger(os.Stderr, slog.LevelInfo).Handler().WithAttrs([]slog.Attr{slog.String("command_id", commandID)}))
-	ctx = logging.WithLogger(ctx, logger)
-	started := time.Now()
-	defer func() {
-		if commandError != nil {
-			logging.FromContext(ctx).LogAttrs(ctx, slog.LevelError, "Local command failed", slog.String("event", "command_failed"), slog.Float64("duration_ms", logging.Milliseconds(time.Since(started))), logging.ErrorAttribute(commandError))
-		}
-	}()
-	if len(arguments) == 1 && arguments[0] == "--version" {
-		return writeVersion(output)
-	}
-	if len(arguments) == 1 && arguments[0] == "healthcheck" {
-		return healthcheck(ctx)
-	}
-	if len(arguments) == 1 && (arguments[0] == "--help" || arguments[0] == "-h") {
-		_, err := io.WriteString(output, commandHelp)
-		return oops.In("command").Wrap(err)
-	}
-	if len(arguments) < 2 || arguments[0] != "keys" {
-		return oops.In("command").Code("command_invalid").New("unknown command; see --help")
-	}
-	operation := arguments[1]
-	var name, id string
-	switch operation {
-	case "create":
-		flags := flag.NewFlagSet("keys create", flag.ContinueOnError)
-		flags.SetOutput(io.Discard)
-		flags.StringVar(&name, "name", "", "script name")
-		if err := flags.Parse(arguments[2:]); err != nil {
-			if errors.Is(err, flag.ErrHelp) {
-				_, err = io.WriteString(output, commandHelp)
-				return oops.In("command").Wrap(err)
+	var name string
+	create := &cobra.Command{
+		Use:   "create",
+		Short: "Generate a script credential, shown once",
+		Args: func(command *cobra.Command, arguments []string) error {
+			if err := cobra.NoArgs(command, arguments); err != nil {
+				return err
 			}
-			return oops.In("command").Code("command_invalid").New("invalid create arguments; use keys create --name NAME")
-		}
-		if flags.NArg() != 0 || strings.TrimSpace(name) == "" {
-			return oops.In("command").Code("command_invalid").New("use keys create --name NAME")
-		}
-	case "list":
-		if len(arguments) != 2 {
-			return oops.In("command").Code("command_invalid").New("use keys list without arguments")
-		}
-	case "pair", "revoke":
-		if len(arguments) != 3 {
-			return oops.In("command").Code("command_invalid").New("use keys pair ID or keys revoke ID")
-		}
-		id = arguments[2]
-		if _, err := ulid.ParseStrict(id); err != nil {
-			return oops.In("command").Code("command_invalid").New("key ID must be a ULID returned by keys create or list")
-		}
-	default:
-		return oops.In("command").Code("command_invalid").New("unknown keys operation; see --help")
+			if strings.TrimSpace(name) == "" {
+				return oops.In("command").Code("command_invalid").New("use keys create --name NAME")
+			}
+			return nil
+		},
+		RunE: func(command *cobra.Command, _ []string) error {
+			return runKeys(command, commandID, keyCommandOptions{name: name, json: *jsonOutput})
+		},
 	}
+	create.Flags().StringVar(&name, "name", "", "Name of the sending script (required)")
+	var all bool
+	list := &cobra.Command{
+		Use:   "list",
+		Short: "List active key metadata without secrets",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			return runKeys(command, commandID, keyCommandOptions{all: all, json: *jsonOutput})
+		},
+	}
+	list.Flags().BoolVar(&all, "all", false, "Include revoked keys")
+	keys.AddCommand(create, list)
+	for _, operation := range []struct{ name, description string }{
+		{"pair", "Issue a fresh 5-minute code to bind or rebind a recipient"},
+		{"revoke", "Revoke a credential"},
+	} {
+		keys.AddCommand(&cobra.Command{
+			Use:   operation.name + " KEY_ID",
+			Short: operation.description,
+			Args: func(command *cobra.Command, arguments []string) error {
+				if err := cobra.ExactArgs(1)(command, arguments); err != nil {
+					return err
+				}
+				if _, err := ulid.ParseStrict(arguments[0]); err != nil {
+					return oops.In("command").Code("command_invalid").New("key ID must be a ULID returned by keys create or list")
+				}
+				return nil
+			},
+			RunE: func(command *cobra.Command, arguments []string) error {
+				return runKeys(command, commandID, keyCommandOptions{id: arguments[0], json: *jsonOutput})
+			},
+		})
+	}
+	return keys
+}
+
+func runKeys(command *cobra.Command, commandID string, options keyCommandOptions) (commandError error) {
+	ctx := command.Context()
+	operation := command.Name()
+	started := time.Now()
 	settings, err := config.LoadLocal()
 	if err != nil {
 		return err
 	}
-	logger = slog.New(logging.NewLogger(os.Stderr, settings.LogLevel).Handler().WithAttrs([]slog.Attr{slog.String("command_id", commandID), slog.String("operation", "keys_"+operation)}))
+	logger := slog.New(logging.NewLogger(os.Stderr, settings.LogLevel).Handler().WithAttrs([]slog.Attr{slog.String("command_id", commandID), slog.String("operation", "keys_"+operation)}))
 	ctx = logging.WithLogger(ctx, logger)
+	command.SetContext(ctx)
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	store, err := apikey.Open(ctx, settings.DataDir)
@@ -105,43 +107,43 @@ func RunCommand(ctx context.Context, arguments []string, output io.Writer) (comm
 	}
 	defer func() { commandError = errors.Join(commandError, store.Close()) }()
 	reportMigrations(ctx, store)
-	var result any
+	output := command.OutOrStdout()
+	var outputError error
 	switch operation {
 	case "create":
-		created, err := store.Create(ctx, name)
+		created, err := store.Create(ctx, options.name)
 		if err != nil {
 			return err
 		}
-		result = created
+		outputError = writeCreatedKey(output, created, options.json)
 		logger.LogAttrs(ctx, slog.LevelInfo, "API key created", slog.String("event", "api_key_created"), slog.String("api_key_id", created.ID), slog.String("api_key_name", created.Name), slog.String("pairing_expires_at", *created.PairingExpiresAt))
 	case "pair":
-		paired, err := store.IssuePairing(ctx, id)
+		paired, err := store.IssuePairing(ctx, options.id)
 		if err != nil {
 			return err
 		}
-		result = paired
+		outputError = writePairing(output, paired, options.json)
 		logger.LogAttrs(ctx, slog.LevelInfo, "Pairing code issued", slog.String("event", "pairing_code_issued"), slog.String("api_key_id", paired.ID), slog.String("pairing_expires_at", *paired.PairingExpiresAt))
 	case "list":
 		keys, err := store.List(ctx)
 		if err != nil {
 			return err
 		}
-		result = keys
+		if !options.all {
+			keys = slices.DeleteFunc(keys, func(key apikey.Key) bool { return key.RevokedAt != nil })
+		}
+		outputError = writeKeyList(output, keys, options.json)
 		logger.LogAttrs(ctx, slog.LevelInfo, "API keys listed", slog.String("event", "api_keys_listed"), slog.Int("key_count", len(keys)))
 	case "revoke":
-		changed, err := store.Revoke(ctx, id)
+		changed, err := store.Revoke(ctx, options.id)
 		if err != nil {
 			return err
 		}
-		result = struct {
-			ID      string `json:"id"`
-			Revoked bool   `json:"revoked"`
-			Changed bool   `json:"changed"`
-		}{id, true, changed}
-		logger.LogAttrs(ctx, slog.LevelInfo, "API key revoked", slog.String("event", "api_key_revoked"), slog.String("api_key_id", id), slog.Bool("changed", changed))
+		outputError = writeRevocation(output, options.id, changed, options.json)
+		logger.LogAttrs(ctx, slog.LevelInfo, "API key revoked", slog.String("event", "api_key_revoked"), slog.String("api_key_id", options.id), slog.Bool("changed", changed))
 	}
-	if err := json.NewEncoder(output).Encode(result); err != nil {
-		return oops.In("command").Code("command_output_failed").Wrapf(err, "command result could not be written")
+	if outputError != nil {
+		return oops.In("command").Code("command_output_failed").Wrapf(outputError, "command result could not be written")
 	}
 	logger.LogAttrs(ctx, slog.LevelDebug, "Local command completed", slog.String("event", "command_completed"), slog.Float64("duration_ms", logging.Milliseconds(time.Since(started))))
 	return nil

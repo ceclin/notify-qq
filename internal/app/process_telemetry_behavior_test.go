@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -115,7 +116,17 @@ func testProcessTelemetry(t *testing.T, binary string) {
 			settings[scenario.setting] = scenario.value
 			process := launchServiceProcess(t, binary, settings)
 			process.requireStartupFailure(t)
-			logs, err := os.ReadFile(process.logPath)
+			events := process.events(t)
+			// Numeric values can also occur in timestamps or dependency versions
+			// in stack frames; check the diagnostic payload instead.
+			for _, event := range events {
+				delete(event, "time")
+				if details, ok := event["error"].(map[string]any); ok {
+					delete(details, "time")
+					delete(details, "stacktrace")
+				}
+			}
+			logs, err := json.Marshal(events)
 			if err != nil || strings.Contains(string(logs), scenario.value) && scenario.value != "" {
 				t.Fatal("invalid telemetry configuration exposed its value in startup logs")
 			}

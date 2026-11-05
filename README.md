@@ -54,10 +54,10 @@ The image includes a Docker readiness check; `docker compose ps` shows its healt
 Alternatively, download the Linux amd64 or arm64 archive from [Releases](https://github.com/ceclin/notify-qq/releases), extract it, and create `.env` as shown above:
 
 ```sh
-./notify-qq
+./notify-qq serve
 ```
 
-The default listener is `127.0.0.1:8080`, and data is saved in `./data`. For the key commands below, replace `docker compose exec notify-qq /notify-qq` with `./notify-qq`.
+The default listener is `127.0.0.1:8080`, and data is saved in `./data`. Run `./notify-qq` or add `--help` to any command for usage. For the key commands below, replace `docker compose exec notify-qq /notify-qq` with `./notify-qq`.
 
 ## Pair a recipient
 
@@ -67,7 +67,7 @@ Create a key for the script that will send notifications:
 docker compose exec notify-qq /notify-qq keys create --name backup
 ```
 
-Save the returned `key` for your script. Send the entire `pairing_code` within 5 minutes, without a command prefix:
+Save the API key for your script. Send the entire pairing code within 5 minutes, without a command prefix:
 
 - For a private chat, paste it directly into your chat with the bot.
 - For a group, add the bot first, then **@ the bot** and paste the code in the same message.
@@ -137,6 +137,8 @@ docker compose exec notify-qq /notify-qq keys revoke KEY_ID
 ```
 
 Use `keys pair` when a pairing code expires or to change a key's recipient. It issues a fresh 5-minute code; the existing recipient stays active until the new recipient binds. Use the `id` from `keys list` to pair or revoke a key. Key changes take effect without restarting the service.
+
+Commands print readable text and tables by default; add `--json` for scripts. `keys list` shows active keys; add `--all` to include revoked keys.
 
 ## Configuration
 

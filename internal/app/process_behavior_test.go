@@ -42,6 +42,7 @@ func TestBehaviorProcessLifecycle(t *testing.T) {
 	}
 
 	t.Run("local readiness probe", func(t *testing.T) { testProcessHealthcheck(t, binary) })
+	t.Run("command-line help and argument validation", func(t *testing.T) { testProcessCLI(t, binary) })
 	t.Run("local API key management", func(t *testing.T) { testProcessAPIKeys(t, binary) })
 	t.Run("OpenTelemetry lifecycle", func(t *testing.T) { testProcessTelemetry(t, binary) })
 	t.Run("version reports build metadata without configuration or storage", func(t *testing.T) {
@@ -60,7 +61,7 @@ func TestBehaviorProcessLifecycle(t *testing.T) {
 		} {
 			directory := t.TempDir()
 			dataDir := filepath.Join(directory, "uncreated")
-			command := exec.CommandContext(t.Context(), scenario.binary, "--version")
+			command := exec.CommandContext(t.Context(), scenario.binary, "--version", "--json")
 			command.Dir = directory
 			command.Env = append(os.Environ(), "LOG_LEVEL=invalid", "QQ_APP_ID=", "QQ_APP_SECRET=", "DATA_DIR="+dataDir, "GORACE=atexit_sleep_ms=0")
 			output, err := command.Output()
@@ -353,7 +354,7 @@ func launchServiceProcess(t *testing.T, binary string, overrides map[string]stri
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	t.Cleanup(cancel)
-	command := exec.CommandContext(ctx, binary)
+	command := exec.CommandContext(ctx, binary, "serve")
 	command.Dir = directory
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")

@@ -53,7 +53,7 @@ func TestBehaviorAPIPathPrefixScopesAllEndpoints(t *testing.T) {
 	if !slices.Contains(strings.Split(headers.Get("Allow"), ", "), http.MethodPost) {
 		t.Fatalf("incorrect prefixed method rejection: %v", headers)
 	}
-	if fixture.sendCalls.Load() != 1 || fixture.tokenCalls.Load() != 1 {
+	if fixture.sendCalls.Load() != 2 || fixture.tokenCalls.Load() != 1 {
 		t.Fatal("invalid prefixed requests contacted QQ")
 	}
 }

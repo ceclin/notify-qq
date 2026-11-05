@@ -20,6 +20,11 @@ import (
 // worker. A bounded lifetime keeps storage-failure scenarios independent.
 func (fixture *behaviorFixture) deliverMessage(t *testing.T, user, content string) error {
 	t.Helper()
+	return fixture.deliverMessageWithID(t, user, content, "binding-message")
+}
+
+func (fixture *behaviorFixture) deliverMessageWithID(t *testing.T, user, content, messageID string) error {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	ctx = logging.WithLogger(ctx, fixture.logger)
@@ -51,7 +56,7 @@ func (fixture *behaviorFixture) deliverMessage(t *testing.T, user, content strin
 		if err := wsjson.Write(ctx, connection, map[string]any{"op": 0, "s": 1, "t": "READY", "d": map[string]string{"session_id": "test-session"}}); err != nil {
 			return
 		}
-		if err := wsjson.Write(ctx, connection, map[string]any{"op": 0, "s": 2, "t": "C2C_MESSAGE_CREATE", "id": "binding-event", "d": map[string]any{"content": content, "author": map[string]string{"user_openid": user}}}); err != nil {
+		if err := wsjson.Write(ctx, connection, map[string]any{"op": 0, "s": 2, "t": "C2C_MESSAGE_CREATE", "id": "binding-event", "d": map[string]any{"id": messageID, "content": content, "author": map[string]string{"user_openid": user}}}); err != nil {
 			return
 		}
 		for {

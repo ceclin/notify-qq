@@ -156,11 +156,22 @@ type Message struct {
 }
 
 func (q *Client) Send(ctx context.Context, userOpenID string, notification Notification) (Message, error) {
+	return q.send(ctx, userOpenID, messagePayload(notification))
+}
+
+func (q *Client) Reply(ctx context.Context, userOpenID, messageID string, notification Notification) (Message, error) {
+	payload := messagePayload(notification)
+	payload.MsgID = messageID
+	payload.MsgSeq = 1
+	return q.send(ctx, userOpenID, payload)
+}
+
+func (q *Client) send(ctx context.Context, userOpenID string, payload sendMessageRequest) (Message, error) {
 	token, err := q.accessToken(ctx)
 	if err != nil {
 		return Message{}, err
 	}
-	data, err := q.request(ctx, http.MethodPost, "send_message", apiBaseURL+"/v2/users/"+url.PathEscape(userOpenID)+"/messages", token, messagePayload(notification))
+	data, err := q.request(ctx, http.MethodPost, "send_message", apiBaseURL+"/v2/users/"+url.PathEscape(userOpenID)+"/messages", token, payload)
 	if err != nil {
 		var upstream *Error
 		if errors.As(err, &upstream) && upstream.Status == http.StatusUnauthorized {

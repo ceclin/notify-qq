@@ -111,12 +111,12 @@ func TestBehaviorKeyRecipientsStayIsolatedAcrossRebindingAndRestart(t *testing.T
 	requireRecipient(secondSecret, "bob")
 	request(firstSecret, "/notify", `{"content":"after restart"}`, http.StatusOK)
 	request(secondSecret, "/notify", `{"content":"bob after restart"}`, http.StatusOK)
-	for index, recipient := range []string{"alice", "bob", "alice", "charlie", "bob"} {
+	for index, recipient := range []string{"alice", "bob", "alice", "bob", "alice", "charlie", "charlie", "bob"} {
 		if fixture.messages[index]["recipient"] != recipient {
 			t.Fatalf("notification %d delivered to incorrect recipient", index)
 		}
 	}
-	if fixture.sendCalls.Load() != 5 {
+	if fixture.sendCalls.Load() != 8 {
 		t.Fatal("invalid requests reached QQ")
 	}
 	entries, err := fixture.service.keys.List(t.Context())

@@ -22,6 +22,8 @@ const (
 
 type sendMessageRequest struct {
 	MsgType  int             `json:"msg_type"`
+	MsgID    string          `json:"msg_id,omitempty"`
+	MsgSeq   int             `json:"msg_seq,omitempty"`
 	Markdown markdownContent `json:"markdown"`
 	Keyboard *keyboard       `json:"keyboard,omitempty"`
 }

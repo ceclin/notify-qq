@@ -278,6 +278,7 @@ func (s *service) handleQQEvent(ctx context.Context, event qq.Event) error {
 
 func (s *service) pairFromMessage(ctx context.Context, data json.RawMessage) error {
 	var message struct {
+		ID      string `json:"id"`
 		Content string `json:"content"`
 		Author  struct {
 			UserOpenID string `json:"user_openid"`
@@ -291,6 +292,9 @@ func (s *service) pairFromMessage(ctx context.Context, data json.RawMessage) err
 		logging.FromContext(ctx).LogAttrs(ctx, slog.LevelDebug, "Message does not change notification recipient", slog.String("event", "pairing_ignored"), slog.String("reason", "not_binding_command"))
 		return nil
 	}
+	if message.ID == "" {
+		return logging.OperationError(ctx, "pairing", "invalid_message", "QQ binding message has no message ID", nil)
+	}
 	key, changed, err := s.keys.Bind(ctx, fields[1], message.Author.UserOpenID)
 	if err != nil {
 		return logging.OperationError(ctx, "pairing", "pairing_failed", "Recipient binding could not be saved", err)
@@ -300,5 +304,13 @@ func (s *service) pairFromMessage(ctx context.Context, data json.RawMessage) err
 		return nil
 	}
 	logging.FromContext(ctx).LogAttrs(ctx, slog.LevelInfo, "Notification recipient paired", slog.String("event", "recipient_paired"), slog.String("api_key_id", key.ID), slog.String("recipient_ref", recipientReference(key.UserOpenID)))
+	_, err = s.qq.Reply(ctx, key.UserOpenID, message.ID, qq.Notification{Markdown: "绑定成功，现在可以接收通知了。"})
+	if err != nil {
+		// The code is already consumed; replaying this event cannot retry its reply.
+		replyError := logging.OperationError(ctx, "pairing", "pairing_reply_failed", "Recipient paired, but confirmation could not be sent", err)
+		logging.FromContext(ctx).LogAttrs(ctx, slog.LevelError, "Pairing confirmation failed", slog.String("event", "pairing_reply_failed"), slog.String("api_key_id", key.ID), logging.ErrorAttribute(replyError))
+		return nil
+	}
+	logging.FromContext(ctx).LogAttrs(ctx, slog.LevelInfo, "Pairing confirmation accepted by QQ", slog.String("event", "pairing_reply_accepted"), slog.String("api_key_id", key.ID))
 	return nil
 }

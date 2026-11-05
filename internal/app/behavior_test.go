@@ -221,13 +221,20 @@ func TestBehaviorPairAndNotifyAcrossRestart(t *testing.T) {
 	if result["paired"] != true || result["user_openid"] != "owner-openid" {
 		t.Fatalf("unexpected pairing status: %v", result)
 	}
+	if len(fixture.messages) != 1 {
+		t.Fatalf("pairing confirmations = %d, want one", len(fixture.messages))
+	}
+	reply := fixture.messages[0]
+	if reply["recipient"] != "owner-openid" || reply["msg_id"] != "binding-message" || reply["msg_seq"] != float64(1) || reply["msg_type"] != float64(2) || reply["markdown"].(map[string]any)["content"] != "绑定成功，现在可以接收通知了。" {
+		t.Fatalf("incorrect pairing reply: %v", reply)
+	}
 	status, result, headers := fixture.notify(t, `{"content":"## Backup\n\nFinished ✓"}`)
 	requireStatus(t, status, 200)
 	if result["message_id"] != "qq-message-id" || result["status"] != "accepted" || headers.Get("X-Request-ID") == "" {
 		t.Fatalf("unexpected notification result: %v", result)
 	}
-	if fixture.messages[0]["markdown"].(map[string]any)["content"] != "## Backup\n\nFinished ✓" || fixture.messages[0]["msg_type"] != float64(2) || fixture.messages[0]["msg_id"] != nil {
-		t.Fatalf("incorrect proactive message: %v", fixture.messages[0])
+	if fixture.messages[1]["markdown"].(map[string]any)["content"] != "## Backup\n\nFinished ✓" || fixture.messages[1]["msg_type"] != float64(2) || fixture.messages[1]["msg_id"] != nil || fixture.messages[1]["msg_seq"] != nil {
+		t.Fatalf("incorrect proactive message: %v", fixture.messages[1])
 	}
 	fixture.server.Close()
 	if err := fixture.service.keys.Close(); err != nil {
@@ -245,7 +252,7 @@ func TestBehaviorPairAndNotifyAcrossRestart(t *testing.T) {
 	if fileInfo.Mode().Perm() != 0600 {
 		t.Errorf("database file permissions = %o, want 600", fileInfo.Mode().Perm())
 	}
-	if fixture.sendCalls.Load() != 2 {
+	if fixture.sendCalls.Load() != 3 {
 		t.Fatalf("unexpected number of QQ sends: %d", fixture.sendCalls.Load())
 	}
 }
